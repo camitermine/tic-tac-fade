@@ -51,8 +51,8 @@ namespace TicTacFade.UI
 
         void UpdateActiveCounts(int countX, int countO, int bufferSize)
         {
-            countLabelX.text = $"X: {countX}/{bufferSize}" + (countX == bufferSize ? "  ¡Aviso de desvanecimiento!" : "");
-            countLabelO.text = $"O: {countO}/{bufferSize}" + (countO == bufferSize ? "  ¡Aviso de desvanecimiento!" : "");
+            countLabelX.text = $"X: {countX}/{bufferSize}" + (countX == bufferSize ? "  ¡Desvaneciendo!" : "");
+            countLabelO.text = $"O: {countO}/{bufferSize}" + (countO == bufferSize ? "  ¡Desvaneciendo!" : "");
         }
 
         void ShowGameEndedBanner(GameEndedEvent evt)

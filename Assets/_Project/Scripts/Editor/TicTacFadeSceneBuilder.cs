@@ -2,6 +2,7 @@ using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.EventSystems;
+using UnityEngine.Rendering.Universal;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 using TicTacFade.Game;
@@ -21,6 +22,8 @@ namespace TicTacFade.EditorTools
         public static void BuildScene()
         {
             var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+
+            CreateMainCamera();
 
             var eventSystemGO = new GameObject("EventSystem", typeof(EventSystem));
 #if ENABLE_INPUT_SYSTEM
@@ -46,8 +49,8 @@ namespace TicTacFade.EditorTools
 
             var gameHud = hud.gameObject.AddComponent<GameHud>();
             SetPrivateField(gameHud, "turnLabel", hud.Find("TurnLabel").GetComponent<Text>());
-            SetPrivateField(gameHud, "countLabelX", hud.Find("CountX").GetComponent<Text>());
-            SetPrivateField(gameHud, "countLabelO", hud.Find("CountO").GetComponent<Text>());
+            SetPrivateField(gameHud, "countLabelX", hud.Find("CountsRow/CountX").GetComponent<Text>());
+            SetPrivateField(gameHud, "countLabelO", hud.Find("CountsRow/CountO").GetComponent<Text>());
             SetPrivateField(gameHud, "gameEndedBanner", winBanner.gameObject);
             SetPrivateField(gameHud, "gameEndedLabel", winLabel);
 
@@ -72,6 +75,23 @@ namespace TicTacFade.EditorTools
             }
 
             Debug.Log($"Tic-Tac-Fade: placeholder scene created at {ScenePath}. You can hit Play.");
+        }
+
+        static void CreateMainCamera()
+        {
+            var cameraGO = new GameObject("Main Camera", typeof(Camera), typeof(AudioListener));
+            cameraGO.tag = "MainCamera";
+
+            var camera = cameraGO.GetComponent<Camera>();
+            camera.orthographic = true;
+            camera.clearFlags = CameraClearFlags.SolidColor;
+            camera.backgroundColor = new Color(0.05f, 0.05f, 0.08f); // near-black, keeps the neon cell colors readable
+
+            // The Canvas is ScreenSpaceOverlay, so this camera isn't required to render
+            // the UI, but its absence is exactly what produces "No cameras rendering"
+            // and the black Game view background.
+            if (cameraGO.GetComponent<UniversalAdditionalCameraData>() == null)
+                cameraGO.AddComponent<UniversalAdditionalCameraData>();
         }
 
         static RectTransform CreateBoardPanel(Transform parent, out CellView[] cells)
@@ -126,38 +146,86 @@ namespace TicTacFade.EditorTools
 
         static Transform CreateHud(Transform parent)
         {
-            var hudRT = CreateUIObject("HUD", parent);
+            // Wrapping the HUD in its own SafeArea container keeps the turn
+            // label and counters clear of notches/cutouts and the Android
+            // gesture bar without hardcoding per-device offsets. Uses Unity's
+            // own built-in UnityEngine.UI.SafeArea component rather than a
+            // hand-rolled one.
+            var safeAreaRT = CreateUIObject("SafeAreaHUD", parent, typeof(SafeArea));
+            StretchFull(safeAreaRT);
+
+            var hudRT = CreateUIObject("HUD", safeAreaRT, typeof(VerticalLayoutGroup), typeof(ContentSizeFitter));
             hudRT.anchorMin = new Vector2(0f, 1f);
             hudRT.anchorMax = new Vector2(1f, 1f);
             hudRT.pivot = new Vector2(0.5f, 1f);
-            hudRT.sizeDelta = new Vector2(0f, 220f);
             hudRT.anchoredPosition = Vector2.zero;
+            // A freshly created RectTransform keeps a nonzero default
+            // sizeDelta; under a full-width stretch anchor that leaks
+            // through as extra width instead of a clean 1:1 stretch, so it
+            // has to be pinned to 0 explicitly (height is fine as-is, the
+            // ContentSizeFitter below takes it over).
+            hudRT.sizeDelta = new Vector2(0f, hudRT.sizeDelta.y);
 
-            var turnRT = CreateUIObject("TurnLabel", hudRT, typeof(Text));
-            turnRT.anchorMin = new Vector2(0f, 1f);
-            turnRT.anchorMax = new Vector2(1f, 1f);
-            turnRT.pivot = new Vector2(0.5f, 1f);
-            turnRT.sizeDelta = new Vector2(0f, 80f);
-            turnRT.anchoredPosition = new Vector2(0f, -20f);
-            ConfigureText(turnRT.GetComponent<Text>(), 48, TextAnchor.MiddleCenter, Color.white);
+            var hudLayout = hudRT.GetComponent<VerticalLayoutGroup>();
+            hudLayout.padding = new RectOffset(32, 32, 32, 24);
+            hudLayout.spacing = 16f;
+            hudLayout.childAlignment = TextAnchor.UpperCenter;
+            hudLayout.childControlWidth = true;
+            hudLayout.childControlHeight = true;
+            hudLayout.childForceExpandWidth = true;
+            hudLayout.childForceExpandHeight = false;
 
-            var countXRT = CreateUIObject("CountX", hudRT, typeof(Text));
-            countXRT.anchorMin = new Vector2(0f, 1f);
-            countXRT.anchorMax = new Vector2(0.5f, 1f);
-            countXRT.pivot = new Vector2(0f, 1f);
-            countXRT.sizeDelta = new Vector2(0f, 60f);
-            countXRT.anchoredPosition = new Vector2(20f, -110f);
+            // Height has to grow with content instead of clipping, which is
+            // what caused the old overlap bug (fixed-size box + variable-
+            // length appended text).
+            var hudFitter = hudRT.GetComponent<ContentSizeFitter>();
+            hudFitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
+            hudFitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+
+            var turnRT = CreateUIObject("TurnLabel", hudRT, typeof(Text), typeof(LayoutElement));
+            var turnLabel = turnRT.GetComponent<Text>();
+            ConfigureText(turnLabel, 48, TextAnchor.MiddleCenter, Color.white);
+            turnLabel.horizontalOverflow = HorizontalWrapMode.Wrap;
+            turnLabel.verticalOverflow = VerticalWrapMode.Overflow;
+            var turnLayoutElement = turnRT.GetComponent<LayoutElement>();
+            turnLayoutElement.preferredHeight = 70f;
+            turnLayoutElement.flexibleWidth = 1f;
+
+            var countsRowRT = CreateUIObject("CountsRow", hudRT, typeof(HorizontalLayoutGroup), typeof(LayoutElement));
+            var countsRowLayout = countsRowRT.GetComponent<HorizontalLayoutGroup>();
+            countsRowLayout.spacing = 16f;
+            countsRowLayout.childAlignment = TextAnchor.MiddleCenter;
+            countsRowLayout.childControlWidth = true;
+            countsRowLayout.childControlHeight = true;
+            countsRowLayout.childForceExpandWidth = true;
+            countsRowLayout.childForceExpandHeight = true;
+            var countsRowLayoutElement = countsRowRT.GetComponent<LayoutElement>();
+            // Fixed allowance for two lines (count + fade warning) at 32pt:
+            // simpler and more predictable than cascading per-label
+            // ContentSizeFitters; Overflow (not Clip) on the children is the
+            // safety net if this is ever exceeded.
+            countsRowLayoutElement.minHeight = 110f;
+            // CountsRow is itself a LayoutGroup, so it also reports its own
+            // preferred width (the sum of its children's natural widths) as
+            // an ILayoutElement. Without an explicit flexibleWidth here, the
+            // outer VerticalLayoutGroup falls back to that self-reported
+            // preferred width instead of stretching it to fill the row, and
+            // the inner group ends up overflowing past the screen edges.
+            countsRowLayoutElement.flexibleWidth = 1f;
+
+            var countXRT = CreateUIObject("CountX", countsRowRT, typeof(Text), typeof(LayoutElement));
             var countX = countXRT.GetComponent<Text>();
-            ConfigureText(countX, 32, TextAnchor.MiddleLeft, new Color(0.13f, 0.95f, 0.95f));
+            ConfigureText(countX, 32, TextAnchor.MiddleCenter, new Color(0.13f, 0.95f, 0.95f));
+            countX.horizontalOverflow = HorizontalWrapMode.Wrap;
+            countX.verticalOverflow = VerticalWrapMode.Overflow;
+            countXRT.GetComponent<LayoutElement>().flexibleWidth = 1f;
 
-            var countORT = CreateUIObject("CountO", hudRT, typeof(Text));
-            countORT.anchorMin = new Vector2(0.5f, 1f);
-            countORT.anchorMax = new Vector2(1f, 1f);
-            countORT.pivot = new Vector2(1f, 1f);
-            countORT.sizeDelta = new Vector2(0f, 60f);
-            countORT.anchoredPosition = new Vector2(-20f, -110f);
+            var countORT = CreateUIObject("CountO", countsRowRT, typeof(Text), typeof(LayoutElement));
             var countO = countORT.GetComponent<Text>();
-            ConfigureText(countO, 32, TextAnchor.MiddleRight, new Color(1f, 0.2f, 0.6f));
+            ConfigureText(countO, 32, TextAnchor.MiddleCenter, new Color(1f, 0.2f, 0.6f));
+            countO.horizontalOverflow = HorizontalWrapMode.Wrap;
+            countO.verticalOverflow = VerticalWrapMode.Overflow;
+            countORT.GetComponent<LayoutElement>().flexibleWidth = 1f;
 
             return hudRT;
         }
