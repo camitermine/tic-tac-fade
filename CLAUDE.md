@@ -42,7 +42,7 @@ Assets/_Project/
 
 ## Coding conventions
 
-- C# code, identifiers, comments and commit messages are written in **English**. Design docs may be in Spanish.
+- All text inside `.cs` files goes in **English**: identifiers, comments, XML docs, and assertion/log messages. Design documentation (`docs/`) goes in Spanish. Commit messages are in English.
 - PascalCase for types, methods and properties; `_camelCase` for private fields; one type per file; namespaces match the asmdef.
 - Use `[SerializeField] private` over public fields. Avoid `FindObjectOfType` and string-based lookups.
 - No singletons, except a single composition root or bootstrap if one is truly needed.

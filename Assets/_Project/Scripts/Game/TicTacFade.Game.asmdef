@@ -1,0 +1,16 @@
+{
+    "name": "TicTacFade.Game",
+    "rootNamespace": "TicTacFade.Game",
+    "references": [
+        "TicTacFade.Core"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
