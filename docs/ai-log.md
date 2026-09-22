@@ -130,6 +130,45 @@ El objetivo es que quede visible **qué se le pidió a la IA, qué produjo y qu�
 
 ---
 
+## [5] 2026-09-22 — UI parte 1: escena y HUD sanos (cámara, safe area, layout)
+
+**Objetivo:** `docs/promps/ui-parte-1.md` — hacer idempotente el builder de escena, agregar una Main Camera, y rehacer el layout del HUD con anchors/layout groups + safe area (portrait, Canvas Scaler 1080x1920 match 0.5), verificado con el Simulator en 16:9 y 20:9. Fuera de alcance: indicadores de vida, ghost piece y línea ganadora (parte 2).
+
+**Pedido / prompt:** Cami reportó HUD con textos superpuestos y una hipótesis propia: `TicTacFadeSceneBuilder` no sería idempotente y al re-ejecutarlo duplicaría objetos del HUD, dejando labels viejos sin actualizar encima de los vivos. Pidió verificar esa hipótesis por MCP antes de tocar nada. Aprobó el plan con 4 ajustes: (1) el lock de portrait no es opcional, lo pide GDD §2.3; (2) `SafeArea.Apply()` debía fijar también `offsetMin`/`offsetMax` a cero explícitamente; (3) agregar esta entrada de ai-log documentando el descarte de su hipótesis con evidencia; (4) anotar como deuda de parte 2 que el aviso de desvanecimiento sigue concatenado en el mismo `Text` que el contador.
+
+**Qué hizo la IA:**
+- **Verificó la hipótesis de duplicación (descartada con evidencia) antes de tocar nada:** inspeccionó la jerarquía viva por MCP (`get_hierarchy`, `find_gameobjects`) y el YAML de la escena guardada — exactamente 1 `TurnLabel`, 1 `CountX`, 1 `CountO`, sin huérfanos. Causa estructural: `BuildScene()` siempre arranca con `EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single)`, que borra la escena entera antes de reconstruir; no hay ningún camino de código que pueda duplicar objetos entre corridas. La causa real del "se pisan" era otra: `GameHud.cs` concatenaba el aviso de desvanecimiento dentro del mismo `Text` que el contador, en una caja fija sin overflow configurado.
+- Agregó `CreateMainCamera()` a `TicTacFadeSceneBuilder.cs` (Camera + AudioListener + `UniversalAdditionalCameraData` para URP, tag `MainCamera`, `clearFlags=SolidColor`, fondo casi negro).
+- Rehizo `CreateHud()`: `SafeAreaHUD` (usa el componente **built-in** `UnityEngine.UI.SafeArea` de Unity, no uno hecho a mano — se había escrito un `SafeArea.cs` propio primero, pero el compilador marcó ambigüedad de nombres contra `UnityEngine.UI.SafeArea` ya existente en el paquete, y al inspeccionarlo por reflection resultó ser una implementación más completa que la propia; se borró el script custom y se usó el de Unity) → `HUD` (`VerticalLayoutGroup` + `ContentSizeFitter` vertical) → `TurnLabel` + `CountsRow` (`HorizontalLayoutGroup`) → `CountX`/`CountO`, todo con `Wrap`/`Overflow` en vez de cajas fijas.
+- Bloqueó orientación portrait vía `PlayerSettings` (API de Unity, no edición de YAML): `defaultInterfaceOrientation=Portrait`, autorotate a landscape/portrait-invertido deshabilitados. Es requerimiento de GDD §2.3, no una inferencia.
+- Acortó el aviso de desvanecimiento en `GameHud.cs` de "¡Aviso de desvanecimiento!" a "¡Desvaneciendo!" (pedido de Cami tras ver el desborde en un dispositivo angosto) — reduce el ancho de texto necesario, no reemplaza el fix de layout.
+- **Encontró y corrigió 2 bugs reales de layout anidado durante la verificación en el Simulator** (no estaban en el plan original, aparecieron al probar en `Wide Pill Cutout 1200x2640`, con captura de Cami mostrando el texto cortado y apilado verticalmente):
+  1. `CountsRow` (un `HorizontalLayoutGroup`, hijo de `HUD`) no tenía `flexibleWidth` en su propio `LayoutElement`: al ser también un `ILayoutElement`, reportaba su propio ancho preferido (suma de sus hijos) al grupo externo en vez de expandirse a todo el ancho disponible, desbordando ~22px por lado. Fix: `flexibleWidth = 1f` en el `LayoutElement` de `CountsRow` (y de `TurnLabel`, por consistencia).
+  2. `HUD` nunca fijó `sizeDelta` a `(0, alto)` al pasar a anchors de stretch: el `sizeDelta` residual de un `RectTransform` recién creado se sumaba como ancho extra por fuera de la safe area (desbordaba ~62px por lado). Fix: `hudRT.sizeDelta = new Vector2(0f, hudRT.sizeDelta.y);` explícito.
+  - Ambos se diagnosticaron con mediciones exactas de `RectTransform.GetWorldCorners()` en Play Mode vía `execute_code`, no a ojo — la captura visual de Cami en `Wide Pill Cutout` fue la que disparó la investigación.
+- Probó un primer intento de fix para el bug (1) usando `childControlWidth=false` + anchors de stretch manuales en vez de dejar que el `VerticalLayoutGroup` controle el ancho; no funcionó: Unity colapsa los anchors de los hijos a un punto en `SetLayoutHorizontal()` sin importar los flags de control, porque el layout group siempre controla la *posición* en ambos ejes aunque no controle el *tamaño*. Se revirtió ese intento (se borró el helper `StretchHorizontal` que quedó sin uso) y se aplicó el fix real (`flexibleWidth`).
+- Verificó idempotencia corriendo el builder 3 veces en distintos momentos de la tarea (antes y después de los fixes de layout): siempre 1 sola instancia de cada GameObject, sin duplicados.
+
+**Revisión humana:**
+- Los 4 ajustes al plan (ver Pedido/prompt) ya están incorporados arriba.
+- Cami verificó visualmente en el Simulator con `iOS Classic (750x1334)` y `Wide Pill Cutout (1200x2640)`, en el peor caso real (X=3/3, O=3/3, aviso visible en ambos simultáneamente) — confirmó "anda perfecto" después de los 2 fixes de layout.
+
+**Verificación:** compila sin errores/warnings; builder idempotente (3 corridas, sin duplicados); Play mode sin excepciones; mediciones exactas de `RectTransform` en runtime confirman 0 overlaps y 0 desborde de la safe area en `Wide Pill Cutout (1200x2640)`; confirmación visual de Cami en `iOS Classic (750x1334)` y `Wide Pill Cutout (1200x2640)`.
+
+**Aprendizajes:**
+- Una hipótesis de bug puede estar equivocada y el pedido de "verificalo antes de tocar nada" es exactamente lo que evita perseguir la causa falsa (duplicación) en vez de la real (caja fija + overflow no configurado).
+- Los layout groups de Unity anidados (`HorizontalLayoutGroup` dentro de `VerticalLayoutGroup`) necesitan `flexibleWidth` explícito en el `LayoutElement` del hijo-que-también-es-grupo, porque ese hijo reporta su propio tamaño preferido como cualquier `ILayoutElement` y puede pisar el intento de expansión del padre.
+- Un `RectTransform` recién creado retiene su `sizeDelta` default al cambiarle los anchors a stretch por código; hay que fijarlo a `(0,0)` (o al valor que corresponda) explícitamente, si no el valor residual se filtra como tamaño extra.
+- `UnityEngine.UI` ya trae un componente `SafeArea` propio (más completo que una implementación casera): conviene chequear con `unity_reflect` antes de escribir un componente que suena "estándar" — el compilador lo señaló solo (ambigüedad de nombres), pero convenía buscarlo antes de escribir el propio.
+- El Simulator de Unity 6 viene integrado en el Editor (sin paquete) y ya trae perfiles genéricos con notch/punch-hole/pill-cutout suficientes para probar safe area sin instalar `com.unity.device-simulator.devices`.
+- La captura de `manage_camera(action="screenshot")` no sirve para depurar UI `ScreenSpaceOverlay`: renderiza solo por cámara y excluye los canvases overlay. Medir `RectTransform.GetWorldCorners()` en runtime vía `execute_code` es más confiable que perseguir una captura de pantalla automatizada.
+
+**Deuda conocida para la parte 2 (no resuelta acá, ver `GameHud.cs`):** el aviso de desvanecimiento sigue concatenado dentro del mismo `Text` que el contador (`UpdateActiveCounts`). Funciona con el wrap y el texto acortado, pero cuando se agreguen los indicadores de vida de las fichas debería pasar a ser su propio elemento de UI.
+
+**Commit(s):** — (sin commitear; Cami revisa y commitea).
+
+---
+
 ## [0] 2026-09-22 — Definición del MVP y setup de documentación
 
 **Objetivo:** revisar el GDD v0.1, cerrar las decisiones pendientes y preparar el repo para el trabajo con agentes.
