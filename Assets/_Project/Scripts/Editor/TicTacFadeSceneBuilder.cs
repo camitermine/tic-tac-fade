@@ -15,7 +15,7 @@ namespace TicTacFade.EditorTools
     /// </summary>
     public static class TicTacFadeSceneBuilder
     {
-        const string ScenePath = "Assets/Scenes/TicTacFadeGame.unity";
+        const string ScenePath = "Assets/_Project/Scenes/TicTacFadeGame.unity";
 
         [MenuItem("Tic-Tac-Fade/Build Placeholder Scene (1v1)")]
         public static void BuildScene()

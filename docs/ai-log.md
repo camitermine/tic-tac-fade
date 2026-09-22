@@ -52,10 +52,7 @@ El objetivo es que quede visible **qué se le pidió a la IA, qué produjo y qu�
 
 **Commit(s):** — (sin commitear; Cami revisa y commitea).
 
-**Pendiente:**
-- Mover `Assets/Scenes/` a `Assets/_Project/Scenes/`.
-- Actualizar Build Settings con la nueva ruta de las escenas.
-- Actualizar el path hardcodeado en `TicTacFadeSceneBuilder.cs` (sigue apuntando a la ubicación vieja de la escena).
+**Pendiente:** cerrado, ver entrada [4].
 
 ---
 
@@ -100,6 +97,34 @@ El objetivo es que quede visible **qué se le pidió a la IA, qué produjo y qu�
 **Verificación:** compila sin errores/warnings (consola Unity vía MCP) y los 33 tests EditMode de `TicTacFade.Core.Tests` pasan.
 
 **Aprendizajes:** la regla de idioma estaba en `CLAUDE.md` pero era ambigua sobre XML docs y mensajes de aserción; se precisó tras detectarse la desviación en el review.
+
+**Commit(s):** — (sin commitear; Cami revisa y commitea).
+
+---
+
+## [4] 2026-09-22 — Reorganización de Assets/Scenes/ y fix de escena stale
+
+**Objetivo:** cerrar el pendiente de la entrada [1]: mover `Assets/Scenes/` a `Assets/_Project/Scenes/`, actualizar Build Settings y sacar el path hardcodeado de `TicTacFadeSceneBuilder.cs`.
+
+**Pedido / prompt:** Cami pidió mover `Assets/Scenes/` (con sus `.meta`) a `Assets/_Project/Scenes/`, actualizar Build Settings, eliminar el path hardcodeado del builder (que las rutas de escena salgan de un único lugar, constante o Build Settings), y verificar que la escena abre, que el juego corre y que el builder sigue funcionando. Alcance cerrado: sin tocar scripts de gameplay ni UI. Sobre el plan propuesto, Cami pidió dos cambios: (1) `SampleScene.unity` (leftover del template, sin referencias, primera en el orden de build) no se migra: se borra junto con su entrada en Build Settings, que queda con una sola entrada; (2) verificar al final con `git status --porcelain` que la escena figura como rename y no como delete+add.
+
+**Qué hizo la IA:**
+- Movió `Assets/Scenes/TicTacFadeGame.unity` a `Assets/_Project/Scenes/TicTacFadeGame.unity` con `manage_asset(action="move")` (preserva GUID y `.meta` vía `AssetDatabase.MoveAsset`, no filesystem a mano).
+- Borró `Assets/Scenes/SampleScene.unity` (+ `.meta`) con `manage_asset(action="delete")`, y borró la carpeta `Assets/Scenes/` ya vacía.
+- Actualizó Build Settings a una sola entrada (`Assets/_Project/Scenes/TicTacFadeGame.unity`) con `manage_build(action="scenes")`.
+- Actualizó `TicTacFadeSceneBuilder.cs` línea 18: `ScenePath` ahora apunta a `Assets/_Project/Scenes/TicTacFadeGame.unity` (sigue siendo la única constante de la que salen los 3 usos: `SaveScene`, el chequeo de Build Settings y el log).
+- Al probar Play Mode encontró 2 `NullReferenceException` (`BoardView.cs:27`, `GameHud.cs:25`, ambas en `Awake` al hacer `gameManager.StateChanged += ...`). Diagnosticó la causa leyendo el YAML de la escena (solo lectura): la escena estaba **stale**, construida antes del refactor de Core — el `GameManager` serializado tenía `m_EditorClassIdentifier: TicTacFade.Gameplay.GameManager` con campos viejos `boardView`/`hud` que ya no existen en la clase actual (`TicTacFade.Game.GameManager`), y `BoardView`/`GameHud` no tenían el campo `gameManager` serializado en absoluto (solo lo tiene el `GameManager.cs` actual la relación inversa). No era un bug causado por el move: el contenido de la escena no se toca al moverla, así que ya estaba rota desde el 17/9, sin testear en Play mode hasta ahora.
+- Re-ejecutó el builder (`Tic-Tac-Fade/Build Placeholder Scene (1v1)`), que regenera la escena desde las clases actuales y resolvió el problema: 0 errores en Play mode después.
+- Verificó Build Settings después del re-run del builder: sigue en 1 sola entrada (no duplicó), confirmando que el chequeo `alreadyInBuild` funciona con la constante corregida.
+- Corrió `git status --porcelain` (con `git add -A` para que se calcule similitud, después revertido con `git reset` para no dejar nada stageado): `TicTacFadeGame.unity`, su `.meta` y `Assets/Scenes.meta`→`Assets/_Project/Scenes.meta` figuran como **R** (rename); `SampleScene.unity` + `.meta` figuran como **D** (deleted). El `.meta` viajó junto al archivo, como corresponde.
+- No tocó `GameManager.cs`, `BoardView.cs`, `CellView.cs`, `GameHud.cs` ni `RestartButton.cs`.
+- Dejó sin tocar `ProjectSettings/ProjectSettings.asset` (`templateDefaultScene: Assets/Scenes/SampleScene.unity`): metadata inerte del template original, no la lee ni el juego ni el build, y no hay tool de MCP que exponga ese campo puntual (editar ese YAML a mano violaría la regla de CLAUDE.md).
+
+**Revisión humana:** pendiente (a validar por Cami).
+
+**Verificación:** escena carga sin errores (jerarquía con `EventSystem`/`Canvas`/`GameManager` intacta); Play mode sin excepciones tras regenerar la escena; builder recreó la escena en la ruta nueva sin duplicar la entrada de Build Settings; `git status --porcelain` confirma rename (no delete+add) en la escena movida.
+
+**Aprendizajes:** una escena `.unity` puede quedar desincronizada en silencio de un refactor de scripts (los campos serializados viejos simplemente se pierden al deserializar bajo la clase nueva, sin error de compilación) — vale la pena probar Play mode después de un refactor de Core/Game/UI, no solo compilar y correr tests de EditMode. Mover un asset con `manage_asset(move)` no reescribe su contenido, así que un bug de este tipo sobrevive intacto al move y hay que diagnosticarlo aparte. El commit de la extracción del Core quedó con la escena serializada desactualizada (NullReference en Play mode), detectado recién en la iteración siguiente. El smoke test manual en Play Mode es obligatorio antes de cerrar cualquier tarea que toque tipos serializados, y regenerar la escena con el builder es parte de esa verificación.
 
 **Commit(s):** — (sin commitear; Cami revisa y commitea).
 
