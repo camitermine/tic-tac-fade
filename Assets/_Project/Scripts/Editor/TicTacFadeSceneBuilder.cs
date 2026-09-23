@@ -17,6 +17,7 @@ namespace TicTacFade.EditorTools
     public static class TicTacFadeSceneBuilder
     {
         const string ScenePath = "Assets/_Project/Scenes/TicTacFadeGame.unity";
+        const string GameConfigAssetPath = "Assets/_Project/Config/GameConfig.asset";
 
         [MenuItem("Tic-Tac-Fade/Build Placeholder Scene (1v1)")]
         public static void BuildScene()
@@ -57,6 +58,7 @@ namespace TicTacFade.EditorTools
 
             var gameManagerGO = new GameObject("GameManager");
             var gameManager = gameManagerGO.AddComponent<GameManager>();
+            SetPrivateField(gameManager, "config", GetOrCreateGameConfigAsset());
             SetPrivateField(boardView, "gameManager", gameManager);
             SetPrivateField(gameHud, "gameManager", gameManager);
 
@@ -76,6 +78,21 @@ namespace TicTacFade.EditorTools
             }
 
             Debug.Log($"Tic-Tac-Fade: placeholder scene created at {ScenePath}. You can hit Play.");
+        }
+
+        static GameConfigAsset GetOrCreateGameConfigAsset()
+        {
+            var existing = AssetDatabase.LoadAssetAtPath<GameConfigAsset>(GameConfigAssetPath);
+            if (existing != null)
+                return existing;
+
+            if (!AssetDatabase.IsValidFolder("Assets/_Project/Config"))
+                AssetDatabase.CreateFolder("Assets/_Project", "Config");
+
+            var asset = ScriptableObject.CreateInstance<GameConfigAsset>();
+            AssetDatabase.CreateAsset(asset, GameConfigAssetPath);
+            AssetDatabase.SaveAssets();
+            return asset;
         }
 
         static void CreateMainCamera()
