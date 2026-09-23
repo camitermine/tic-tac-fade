@@ -51,6 +51,7 @@ namespace TicTacFade.EditorTools
             SetPrivateField(gameHud, "turnLabel", hud.Find("TurnLabel").GetComponent<Text>());
             SetPrivateField(gameHud, "countLabelX", hud.Find("CountsRow/CountX").GetComponent<Text>());
             SetPrivateField(gameHud, "countLabelO", hud.Find("CountsRow/CountO").GetComponent<Text>());
+            SetPrivateField(gameHud, "fadeWarningLabel", hud.Find("FadeWarning").GetComponent<Text>());
             SetPrivateField(gameHud, "gameEndedBanner", winBanner.gameObject);
             SetPrivateField(gameHud, "gameEndedLabel", winLabel);
 
@@ -128,6 +129,27 @@ namespace TicTacFade.EditorTools
             var label = labelRT.GetComponent<Text>();
             ConfigureText(label, 72, TextAnchor.MiddleCenter, Color.white);
 
+            var criticalRT = CreateUIObject("CriticalMark", rt, typeof(Image));
+            criticalRT.anchorMin = criticalRT.anchorMax = new Vector2(1f, 1f);
+            criticalRT.pivot = new Vector2(1f, 1f);
+            criticalRT.sizeDelta = new Vector2(30f, 30f);
+            criticalRT.anchoredPosition = new Vector2(-8f, -8f);
+            var criticalMark = criticalRT.GetComponent<Image>();
+            criticalMark.sprite = AssetDatabase.GetBuiltinExtraResource<Sprite>("UI/Skin/UISprite.psd");
+            criticalMark.type = Image.Type.Sliced;
+            criticalMark.color = Color.white; // real color (tinted by owner) set by CellView.SetOccupant()
+            criticalMark.raycastTarget = false;
+            criticalMark.enabled = false;
+
+            var ghostRT = CreateUIObject("GhostOverlay", rt, typeof(Image));
+            StretchFull(ghostRT);
+            var ghostOverlay = ghostRT.GetComponent<Image>();
+            ghostOverlay.sprite = AssetDatabase.GetBuiltinExtraResource<Sprite>("UI/Skin/UISprite.psd");
+            ghostOverlay.type = Image.Type.Sliced;
+            ghostOverlay.color = new Color(1f, 1f, 1f, 0f); // real color/alpha set by ShowGhost()
+            ghostOverlay.raycastTarget = false;
+            ghostOverlay.enabled = false;
+
             var highlightRT = CreateUIObject("Highlight", rt, typeof(Image));
             StretchFull(highlightRT);
             var highlight = highlightRT.GetComponent<Image>();
@@ -141,6 +163,8 @@ namespace TicTacFade.EditorTools
             SetPrivateField(cellView, "label", label);
             SetPrivateField(cellView, "background", background);
             SetPrivateField(cellView, "highlightBorder", highlight);
+            SetPrivateField(cellView, "criticalMark", criticalMark);
+            SetPrivateField(cellView, "ghostOverlay", ghostOverlay);
             return cellView;
         }
 
@@ -200,11 +224,11 @@ namespace TicTacFade.EditorTools
             countsRowLayout.childForceExpandWidth = true;
             countsRowLayout.childForceExpandHeight = true;
             var countsRowLayoutElement = countsRowRT.GetComponent<LayoutElement>();
-            // Fixed allowance for two lines (count + fade warning) at 32pt:
-            // simpler and more predictable than cascading per-label
-            // ContentSizeFitters; Overflow (not Clip) on the children is the
-            // safety net if this is ever exceeded.
-            countsRowLayoutElement.minHeight = 110f;
+            // Fixed allowance for a single line of 32pt text (the fade
+            // warning now lives in its own FadeWarning element below);
+            // Overflow (not Clip) on the children is the safety net if this
+            // is ever exceeded.
+            countsRowLayoutElement.minHeight = 60f;
             // CountsRow is itself a LayoutGroup, so it also reports its own
             // preferred width (the sum of its children's natural widths) as
             // an ILayoutElement. Without an explicit flexibleWidth here, the
@@ -226,6 +250,15 @@ namespace TicTacFade.EditorTools
             countO.horizontalOverflow = HorizontalWrapMode.Wrap;
             countO.verticalOverflow = VerticalWrapMode.Overflow;
             countORT.GetComponent<LayoutElement>().flexibleWidth = 1f;
+
+            var fadeWarningRT = CreateUIObject("FadeWarning", hudRT, typeof(Text), typeof(LayoutElement));
+            var fadeWarningLabel = fadeWarningRT.GetComponent<Text>();
+            ConfigureText(fadeWarningLabel, 28, TextAnchor.MiddleCenter, new Color(1f, 0.55f, 0.15f));
+            fadeWarningLabel.horizontalOverflow = HorizontalWrapMode.Wrap;
+            fadeWarningLabel.verticalOverflow = VerticalWrapMode.Overflow;
+            var fadeWarningLayoutElement = fadeWarningRT.GetComponent<LayoutElement>();
+            fadeWarningLayoutElement.preferredHeight = 50f;
+            fadeWarningLayoutElement.flexibleWidth = 1f;
 
             return hudRT;
         }

@@ -17,6 +17,7 @@ namespace TicTacFade.UI
         [SerializeField] Text turnLabel;
         [SerializeField] Text countLabelX;
         [SerializeField] Text countLabelO;
+        [SerializeField] Text fadeWarningLabel;
         [SerializeField] GameObject gameEndedBanner;
         [SerializeField] Text gameEndedLabel;
 
@@ -51,8 +52,18 @@ namespace TicTacFade.UI
 
         void UpdateActiveCounts(int countX, int countO, int bufferSize)
         {
-            countLabelX.text = $"X: {countX}/{bufferSize}" + (countX == bufferSize ? "  ¡Desvaneciendo!" : "");
-            countLabelO.text = $"O: {countO}/{bufferSize}" + (countO == bufferSize ? "  ¡Desvaneciendo!" : "");
+            countLabelX.text = $"X: {countX}/{bufferSize}";
+            countLabelO.text = $"O: {countO}/{bufferSize}";
+            fadeWarningLabel.text = BuildFadeWarning(countX, countO, bufferSize);
+        }
+
+        static string BuildFadeWarning(int countX, int countO, int bufferSize)
+        {
+            bool xFading = countX == bufferSize;
+            bool oFading = countO == bufferSize;
+            if (!xFading && !oFading) return string.Empty;
+            if (xFading && oFading) return "¡X y O desvaneciendo!";
+            return xFading ? "¡X desvaneciendo!" : "¡O desvaneciendo!";
         }
 
         void ShowGameEndedBanner(GameEndedEvent evt)

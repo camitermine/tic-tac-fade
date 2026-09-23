@@ -169,6 +169,90 @@ El objetivo es que quede visible **qué se le pidió a la IA, qué produjo y qu�
 
 ---
 
+## [6] 2026-09-22 — UI parte 2: vida por ficha, ghost piece completo, aviso separado
+
+**Objetivo:** `docs/prompts/ui-parte-2.md` — indicador de vida por ficha (GDD §4.1, ambos jugadores), separar el aviso de desvanecimiento del contador (cancela la deuda de la entrada [5]), ghost piece con confirmación en dos toques que previsualice el tablero resultante completo (GDD §3.7), y chequeo de regresión del resaltado de línea ganadora. Restricción explícita: no tocar Core.
+
+**Confirmado antes de tocar nada:** toda la información necesaria ya era pública en `GameState`/`RulesEngine` (`GetLife`, `QueueX`/`QueueO`, `Config.BufferSize`, `GetActiveCount`, `IsLegal`, `WinningLine`) — no hizo falta ningún cambio en Core. El resaltado de línea ganadora ya estaba implementado end-to-end desde antes; esta tarea solo lo re-verificó.
+
+**Corrección propia durante el plan, señalada por Cami:** la primera versión de mi plan asumía que la marca crítica de vida 1 ya alcanzaba para cubrir "la ficha que se va, marcada" del ghost piece, porque matemáticamente son la misma celda (la más vieja de una cola llena siempre tiene vida 1). Cami lo objetó con razón: esa marca aparece en las fichas de **ambos** jugadores a la vez si las dos colas están llenas, así que durante el preview no distingue cuál de los dos badges corresponde a la jugada actual. Se corrigió agregando `CellView.SetGhostVictim(bool)`, una marca aparte (opacidad al mínimo, 0.12) aplicada solo a la ficha propia del jugador activo que el FIFO eliminaría por la jugada previsualizada — independiente de la marca crítica pasiva. Verificado en Play mode: con ambas colas llenas, la ficha vieja del rival muestra el badge crítico pero **no** cae a opacidad mínima; solo la del jugador que previsualiza sí.
+
+**Qué hizo la IA:**
+- `CellView.cs`: nuevos campos `criticalMark` (badge opaco, teñido con el color del dueño — no rojo fijo, para que se distingan los badges de X y O) y `ghostOverlay` (ficha nueva translúcida del preview). Pulso lento en vida 2 vía `Update()` (alfa modulada con seno, sin tocar vida 1/3). `SetGhostVictim(bool)` nuevo (ver corrección arriba).
+- `BoardView.cs`: estado de selección (`selectedCell`) y reescritura de `OnCellClicked` para el flujo de dos toques; `ClearGhostPreview()` limpia ghost + marca de víctima en las 9 celdas antes de cada nueva selección o al confirmar.
+- `GameHud.cs`: `UpdateActiveCounts` deja de concatenar el aviso; nuevo campo `fadeWarningLabel` y `BuildFadeWarning()` arma un mensaje compartido ("¡X desvaneciendo!" / "¡O desvaneciendo!" / "¡X y O desvaneciendo!").
+- `TicTacFadeSceneBuilder.cs`: `CreateCell` agrega `CriticalMark`/`GhostOverlay` (orden de hijos: Label → CriticalMark → GhostOverlay → Highlight, para que el borde de victoria quede siempre arriba). `CreateHud` agrega `FadeWarning` como tercer hijo de `HUD`; `CountsRow.minHeight` baja de 110 a 60 (ya no necesita lugar para 2 líneas en el mismo Text).
+- **Test PlayMode nuevo** (pedido explícito de Cami, primera vez que este repo tiene uno): `Assets/_Project/Tests/PlayMode/` con su propio asmdef (`TicTacFade.PlayModeTests`, `defineConstraints: ["UNITY_INCLUDE_TESTS"]` para que no viaje en el build de Android) y `SceneWiringAndInputTests.cs` con 2 tests: (1) carga la escena y verifica por reflection que ninguna referencia serializada de `CellView`/`BoardView`/`GameHud` quedó sin asignar; (2) simula dos toques reales sobre el `Button` de una celda (`onClick.Invoke()`, no `GameManager.OnCellClicked` directo) y confirma que el primero no aplica la jugada y el segundo sí. Espera activamente a que `GameManager.CurrentState` exista (con timeout y mensaje claro) en vez de un `yield return null` fijo, para no dejar un test intermitente.
+- Actualizó `docs/GDD.md` (v0.2 → v0.3): §4.1 documenta el badge de vida 1 teñido por dueño; §3.7 documenta que el preview marca también la ficha propia que el FIFO eliminaría, distinta de la marca crítica pasiva. Fila nueva en el historial de versiones.
+
+**Revisión humana (dos rondas de ajustes sobre el plan, ambas incorporadas):**
+- Ronda 1: la marca de ghost victim tiene que ser distinta de la marca crítica pasiva (ver corrección arriba); el badge de vida 1 tiene que ir teñido por dueño, no rojo fijo; agregar el test PlayMode descripto arriba.
+- Ronda 2: sumar la actualización del GDD (hecha arriba); limpiar una frase del plan que había quedado desactualizada tras la ronda 1; cambiar el `yield return null` fijo del test por una espera activa con timeout.
+
+**Verificación:**
+- Compila sin errores/warnings.
+- `run_tests(mode="PlayMode")`: 2/2 tests nuevos OK. `run_tests(mode="EditMode")`: 33/33 Core sin regresión.
+- Play mode: secuencia de 6 jugadas confirmadas (dos toques cada una, vía `Button.onClick.Invoke()`, no `GameManager` directo) deja vida 1/2/3 visible en ambos jugadores a la vez; un toque más en una celda vacía muestra el ghost preview con la ficha nueva y, en simultáneo, la ficha vieja de X cae a opacidad mínima mientras la vieja de O (mismo momento, sin ser la jugada actual) se queda solo con el badge crítico normal — confirma que las dos marcas son independientes. Regresión de línea ganadora: partida corta forzando victoria de X, `highlightBorder` se prende en las 3 celdas y aparece el banner. 0 errores de consola en toda la sesión.
+- **Confirmación visual en el Simulator (`iOS Classic`, `Wide Pill Cutout`): pendiente de Cami** — se le dejó el estado de peor caso armado en Play mode para que lo revise.
+
+**Aprendizajes:** una lectura propia de "esto ya alcanza" puede estar matemáticamente bien y ser insuficiente en términos de UX/claridad — la corrección de Cami sobre el ghost piece es exactamente ese caso. Cuando el código termina divergiendo de una descripción implícita del GDD, corresponde actualizar el GDD explícitamente en vez de dejar la especificación real solo en el código (por eso se agregó la v0.3).
+
+**Nota para el futuro, sin resolver ahora (pedido explícito de Cami):** `SceneWiringAndInputTests.AssertNoNullReferenceFields` asume que toda referencia serializada de `CellView`/`BoardView`/`GameHud` es obligatoria. El día que exista un campo legítimamente opcional, va a hacer falta una forma de excluirlo del chequeo (por ejemplo un atributo marcador o una lista de excepciones por nombre de campo).
+
+**Commit(s):** — (sin commitear; Cami revisa y commitea).
+
+---
+
+## [7] 2026-09-22 — Configuración de PlayerSettings para el primer build de Android
+
+**Objetivo:** dejar el proyecto configurado para el primer build de Android vía la API de `PlayerSettings` (nunca editando YAML a mano), en un método de Editor reproducible bajo el menú Tic-Tac-Fade — no builda nada, eso lo corre Cami.
+
+**Pedido / prompt:** Company name y product name reales; package `com.<compañía>.tictacfade` en minúsculas; versión "0.1.0", bundleVersionCode 1; IL2CPP + ARM64; API mínima 23 o superior; confirmar orientación portrait y una sola escena en Build Settings; todo reproducible en un método de menú; documentar en el ai-log; no correr la build.
+
+**Qué hizo la IA:**
+- Antes de tocar nada, buscó si "company name" ya estaba establecido en algún lado de la documentación del repo (por la carpeta raíz `E:\HeuMila\`); no encontró ninguna referencia en `docs/`/`CLAUDE.md`, así que **preguntó** en vez de asumir. Cami confirmó `HeuMila` y `Tic-Tac-Fade` (con guiones, como en el GDD) para product name.
+- Revisó con `unity_reflect` la API real de `PlayerSettings` antes de escribir código: `AndroidApiLevel23` (y todo el rango 16–25) está **obsoleto** en esta versión de Unity (6000.6.1f1). Usó `AndroidApiLevel26`, el nivel no-obsoleto más bajo que igual cumple "23 o superior" — lo señala explícitamente en un comentario y en el log de la propia herramienta, para que no sea una sorpresa.
+- Creó `Assets/_Project/Scripts/Editor/AndroidBuildConfigurator.cs`, menú `Tic-Tac-Fade/Configure Android Player Settings`, método `ConfigureForAndroid()`: `companyName`/`productName`, `SetApplicationIdentifier` (`com.heumila.tictacfade`), `bundleVersion`/`bundleVersionCode`, `SetScriptingBackend(IL2CPP)`, `Android.targetArchitectures = ARM64`, `Android.minSdkVersion`, re-aserta el lock de portrait (GDD §2.3) en vez de depender de que quedara de una sesión anterior, y loguea un warning si `EditorBuildSettings.scenes.Length != 1` en vez de tocarlo solo (no hay forma segura de "arreglar" eso sin asumir cuál escena querés).
+- **No tocó nada de keystore/firma** — no estaba pedido, y generar o tocar un keystore es una acción sensible (credenciales) que no corresponde asumir.
+- Ejecutó el menú dos veces (confirma que es idempotente) y verificó cada valor final por separado vía `execute_code`, no solo el log de la propia herramienta.
+
+**Revisión humana:** pendiente (a validar por Cami).
+
+**Verificación:** compila sin errores/warnings. Ejecutado 2 veces sin error ni cambio de resultado. Valores confirmados uno por uno: `companyName=HeuMila`, `productName=Tic-Tac-Fade`, `applicationIdentifier=com.heumila.tictacfade`, `bundleVersion=0.1.0`, `bundleVersionCode=1`, `scriptingBackend=IL2CPP`, `targetArchitectures=ARM64`, `minSdkVersion=AndroidApiLevel26`, `defaultInterfaceOrientation=Portrait`, autorotate a landscape/portrait-invertido deshabilitados, 1 sola escena en Build Settings (`TicTacFadeGame.unity`, enabled). No se corrió ninguna build.
+
+**Aprendizajes:** un valor pedido textualmente ("API 23") puede ya no ser válido en la versión de Unity/Editor actual (deprecado); vale la pena chequear con `unity_reflect` antes de fijar un enum a mano, y dejar documentado por qué el valor final difiere del pedido literal en vez de aplicarlo a ciegas o cambiarlo en silencio.
+
+**Commit(s):** — (sin commitear; Cami revisa y commitea).
+
+---
+
+## [8] 2026-09-22 — Auditoría de efectos secundarios de la config de Android (entrada [7])
+
+**Objetivo:** Cami revisó los cambios sin commitear después de la entrada [7] y encontró dos cosas que `AndroidBuildConfigurator` no explicaba a simple vista: una carpeta `Assets/Resources/` nueva, y cambios en `Assets/Settings/UniversalRP.asset` / `UniversalRenderPipelineGlobalSettings.asset`. Pidió diagnosticar ambas antes de asumir que eran intencionales.
+
+**Pedido / prompt:** primera pregunta — qué creó `Resources/`, qué hay adentro, si fue `AndroidBuildConfigurator`, y si los cambios de URP eran intencionales o un toque accidental de Unity al cambiar de plataforma. Mi primera respuesta propuso como causa un cambio de plataforma activa; Cami corrigió que la plataforma ya era Android desde antes de esta sesión (confirmado por capturas previas), y pidió específicamente revisar si los cambios de Player Settings del configurador (IL2CPP, ARM64, graphics API) eran el disparador real, y corregir el diagnóstico acá si correspondía. En una tercera vuelta, pidió: (1) verificar si el asset `InputSystem_Actions.inputactions` referenciado en `preloadedAssets` todavía existe o es una referencia colgada de un asset borrado, y sacarlo vía `PlayerSettings.SetPreloadedAssets` si corresponde; (2) cerrar el tema URP sin seguir investigando — registrar causa no determinada con los descartes documentados, tratarlo como re-serialización interna benigna.
+
+**Qué hizo la IA:**
+- `Assets/Resources/`: identificado por contenido (`PerformanceTestRunInfo.json`, `PerformanceTestRunSettings.json`) y por el paquete `com.unity.test-framework.performance` (confirmado en `packages-lock.json`) como un artefacto automático de Unity al correr tests PlayMode — no algo que `AndroidBuildConfigurator` cree (el script no tiene una sola línea que escriba a disco fuera de `PlayerSettings`/`EditorBuildSettings`). Cami ya lo borró y agregó la regla al `.gitignore`.
+- URP — primera hipótesis (cambio de plataforma activa) **descartada**: Cami confirmó que la plataforma activa ya era Android antes de esta sesión.
+- Segunda hipótesis pedida (IL2CPP/ARM64/graphics API) **descartada con evidencia**, no solo por lectura del script: comparé el diff real de `ProjectSettings/ProjectSettings.asset` campo por campo contra los valores actuales. `scriptingBackend`, `AndroidTargetArchitectures` y `AndroidMinSdkVersion` **no aparecen en el diff en absoluto** — ya tenían esos valores exactos (IL2CPP, ARM64, 26) antes de que corriera el configurador, así que no pudieron dispararlo. `m_BuildTargetGraphicsAPIs` sigue en `[]` (Auto), sin tocar. Lo único genuinamente nuevo del lado Android fue `applicationIdentifier.Android` (antes no existía esa entrada, solo `Standalone`).
+- `preloadedAssets` (`InputSystem_Actions.inputactions`) — investigado a fondo en la tercera vuelta: el asset **existe** en disco (`Assets/Settings/InputSystem_Actions.inputactions`, GUID coincide, el `fileID` referenciado resuelve a un `InputActionAsset` real dentro del archivo, no es una referencia rota a nivel de asset). Pero **no es el que usa** `InputSystemUIInputModule` en la escena: ese componente, agregado sin asignarle explícitamente ningún `.inputactions` (`TicTacFadeSceneBuilder` solo hace `AddComponent<InputSystemUIInputModule>()`), termina usando un objeto autogenerado en runtime llamado `DefaultInputActions` — confirmado leyendo `inputModule.actionsAsset.name` con la escena abierta. Además, `PlayerSettings.GetPreloadedAssets()` en memoria ya devolvía 0 elementos pese a que el YAML en disco todavía tenía la entrada — un desincronismo real entre el estado vivo del Editor y lo persistido. No cumplía la condición que había puesto Cami para dejarlo ("si es el que usa el InputSystemUIInputModule"), así que se sacó vía `PlayerSettings.SetPreloadedAssets(new Object[0])` + `AssetDatabase.SaveAssets()` (API, no edición de YAML). Verificado después: `preloadedAssets: []` en disco.
+- URP — **causa no determinada, tema cerrado por pedido explícito de Cami.** Tres hipótesis evaluadas, ninguna confirmada:
+  1. Cambio de plataforma activa — descartada (la plataforma ya era Android desde antes de esta sesión).
+  2. Cambios de Player Settings del configurador de Android (IL2CPP/ARM64/graphics API) — descartada con evidencia (esos campos no aparecen en el diff de `ProjectSettings.asset`, ya tenían esos valores antes de correr `AndroidBuildConfigurator`).
+  3. La `Main Camera`/`UniversalAdditionalCameraData` agregada en la parte 1, recalculada en algún domain reload posterior — hipótesis con algo de sustento circunstancial (timestamps, contenido URP genuinamente nuevo) pero **no demostrable**, Unity no deja un log de esta recalculación interna.
+  El diff de `UniversalRP.asset`/`UniversalRenderPipelineGlobalSettings.asset` se trata como re-serialización interna de prefiltering de shaders, benigna — no bloquea nada, no se sigue investigando.
+
+**Revisión humana:** Cami corrigió mi primer diagnóstico (plataforma activa) con evidencia propia (capturas previas a la sesión) antes de que yo lo verificara con datos; eso llevó a la segunda vuelta, donde sí verifiqué con el diff real en vez de repetir una hipótesis plausible pero no chequeada. En la tercera vuelta, marcó el límite explícito de no seguir investigando URP con una causa no demostrable, y pidió resolver `preloadedAssets` con una regla concreta (existe + lo usa el módulo → dejarlo; si no → sacarlo por API).
+
+**Verificación:** diff completo de `ProjectSettings/ProjectSettings.asset` línea por línea; grep de los campos puntuales pedidos contra el archivo actual vs. el diff; comparación de timestamps de archivo entre `AndroidBuildConfigurator.cs` y los dos `.asset` de URP (consistente con la hipótesis 3, no la prueba de forma concluyente); para `preloadedAssets`: `AssetDatabase.LoadAllAssetsAtPath` confirmó que el fileID referenciado resuelve a un asset real, `InputSystemUIInputModule.actionsAsset.name` confirmó que el módulo usa un objeto distinto, `GetPreloadedAssets()` confirmó el desincronismo memoria/disco, y una relectura del YAML después del fix confirmó `preloadedAssets: []`.
+
+**Aprendizajes:** `git diff` contra el último commit mezcla los cambios de toda la sesión (varias tareas encima de una rama sin commitear), no solo los de la tarea puntual que se está reportando — antes de atribuir un cambio de asset a un script específico hay que confirmar que el campo relevante realmente cambió de valor en el diff, no solo que el archivo aparece modificado. Mi primera respuesta asumió una causa plausible (cambio de plataforma) sin verificarla contra el estado previo real; el diagnóstico correcto salió de comparar valores campo por campo, no de una explicación que sonaba razonable. Un asset puede existir en disco y aun así no ser el que un componente realmente usa en runtime — "¿el archivo existe?" y "¿está en uso?" son preguntas distintas, y solo la segunda importa para decidir si una entrada de `preloadedAssets` es correcta. No toda causa raíz es demostrable con las herramientas disponibles; cuando no lo es, hay que decirlo explícitamente en vez de presentar la hipótesis más plausible como si fuera la conclusión.
+
+**Commit(s):** — (sin commitear; Cami revisa y commitea).
+
+---
+
 ## [0] 2026-09-22 — Definición del MVP y setup de documentación
 
 **Objetivo:** revisar el GDD v0.1, cerrar las decisiones pendientes y preparar el repo para el trabajo con agentes.

@@ -16,6 +16,8 @@ namespace TicTacFade.UI
         [SerializeField] GameManager gameManager;
         [SerializeField] CellView[] cells = new CellView[9];
 
+        int? selectedCell;
+
         void Awake()
         {
             for (int i = 0; i < cells.Length; i++)
@@ -33,10 +35,46 @@ namespace TicTacFade.UI
                 gameManager.StateChanged -= OnStateChanged;
         }
 
-        void OnCellClicked(int index) => gameManager.OnCellClicked(index);
+        void OnCellClicked(int index)
+        {
+            if (selectedCell.HasValue && selectedCell.Value == index)
+            {
+                // Second tap on the already-selected cell: confirm.
+                ClearGhostPreview();
+                selectedCell = null;
+                gameManager.OnCellClicked(index);
+                return;
+            }
+
+            // First tap, or a tap on a different cell: (re)select and preview
+            // the resulting board (GDD §3.7).
+            ClearGhostPreview();
+            selectedCell = index;
+
+            var state = gameManager.CurrentState;
+            var player = state.CurrentPlayer;
+            cells[index].ShowGhost(player);
+
+            if (state.GetActiveCount(player) == state.Config.BufferSize)
+            {
+                var queue = player == Occupant.X ? state.QueueX : state.QueueO;
+                cells[queue[0]].SetGhostVictim(true); // oldest in the SAME queue: the one this move would remove
+            }
+        }
+
+        void ClearGhostPreview()
+        {
+            if (selectedCell.HasValue)
+                cells[selectedCell.Value].HideGhost();
+            foreach (var cell in cells)
+                cell.SetGhostVictim(false);
+        }
 
         void OnStateChanged(GameState state)
         {
+            ClearGhostPreview();
+            selectedCell = null;
+
             Render(state, !state.IsOver);
 
             if (state.IsOver && state.Winner != Occupant.None)

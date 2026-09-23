@@ -1,6 +1,6 @@
 # GDD: Tic-Tac-Fade
 
-**Versión:** 0.2
+**Versión:** 0.3
 **Estado:** MVP definido — pre-producción
 **Fecha:** Septiembre 2026
 **Fuente de verdad:** este archivo (`docs/GDD.md`). Cualquier espejo externo (Google Docs) es secundario.
@@ -13,6 +13,7 @@
 | :-- | :-- | :-- |
 | 0.1 | Sept 2026 | Primer borrador: core gameplay, lógica FIFO, loop de turnos y roadmap. |
 | 0.2 | Sept 2026 | Migración al repo. Regla de empate (repetición + tope), timer por turno con modo ausente, definición general de "vida", indicadores para ambos jugadores, invariante de jugada legal, alcance del MVP. |
+| 0.3 | Sept 2026 | Lenguaje visual final del indicador de vida 1 (badge opaco teñido por dueño) y del ghost piece (marca de opacidad mínima sobre la ficha propia que el FIFO eliminaría, distinta de la marca crítica pasiva). |
 
 ---
 
@@ -91,6 +92,7 @@ Con 3x3 y buffer 3 hay como máximo 6 casillas ocupadas, así que siempre quedan
 ### 3.7 Controles
 
 - **Mobile (touch):** el primer toque selecciona una casilla y muestra la *ghost piece* (previsualización del resultado). Un segundo toque en la misma casilla confirma. Tocar otra casilla cambia la selección.
+  - **Previsualización del resultado (v0.3):** la *ghost piece* no muestra solo la ficha nueva. Si la cola del jugador activo está llena, también marca su propia ficha más vieja (la que el FIFO eliminaría por esa jugada) con una caída a opacidad mínima. Esta marca es distinta de la marca crítica pasiva de vida 1 (§4.1): esa última puede estar visible en la ficha de cualquiera de los dos jugadores en cualquier momento y no identifica cuál se va por la jugada que se está previsualizando ahora.
 - **PC (futuro):** el hover previsualiza y el clic confirma.
 
 ---
@@ -111,6 +113,8 @@ Representación, aplicada a las fichas de **ambos jugadores**:
 | 3 (nueva) | Opacidad plena, bordes definidos. |
 | 2 | Opacidad media, pulso lento. |
 | 1 (crítica) | Contorno o ícono de "vence" **además** de la transparencia. No depender solo de la opacidad, porque en pantallas con sol no se distingue. |
+
+**Implementación MVP (v0.3):** el ícono de vida 1 es un badge opaco (no otra capa de transparencia) en la esquina de la ficha, **teñido con el color del dueño** — no un color fijo compartido entre jugadores, porque con las dos colas llenas puede haber un badge de cada jugador visible a la vez y tienen que distinguirse entre sí.
 
 **Decisión MVP:** ayudas visuales completas activadas. Un modo sin ayudas ("modo memoria") queda como posible modificador futuro.
 
