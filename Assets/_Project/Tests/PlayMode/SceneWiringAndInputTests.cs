@@ -16,6 +16,9 @@ namespace TicTacFade.PlayModeTests
         const string ScenePath = "Assets/_Project/Scenes/TicTacFadeGame.unity";
         const float ReadyTimeoutSeconds = 5f;
 
+        [UnityTearDown]
+        public IEnumerator TearDown() => NetworkTestCleanup.DestroyAllNetworkManagers();
+
         // X at 0,1,2 (top row) and O at 3,4: the starting player wins with
         // the 5th move whoever that is, since each player places on its own
         // turn in the given order.
@@ -35,6 +38,8 @@ namespace TicTacFade.PlayModeTests
             var menuScreen = Object.FindFirstObjectByType<MenuScreen>();
             var resultScreen = Object.FindFirstObjectByType<ResultScreen>();
             var exitMatchButton = Object.FindFirstObjectByType<ExitMatchButton>();
+            var lobbyScreen = Object.FindFirstObjectByType<LobbyScreen>();
+            var joinByCodeScreen = Object.FindFirstObjectByType<JoinByCodeScreen>();
             var cellViews = Object.FindObjectsByType<CellView>(FindObjectsSortMode.None);
             var visibilities = Object.FindObjectsByType<FlowScreenVisibility>(FindObjectsSortMode.None);
 
@@ -44,8 +49,10 @@ namespace TicTacFade.PlayModeTests
             Assert.IsNotNull(menuScreen, "MenuScreen not found in scene.");
             Assert.IsNotNull(resultScreen, "ResultScreen not found in scene.");
             Assert.IsNotNull(exitMatchButton, "ExitMatchButton not found in scene.");
+            Assert.IsNotNull(lobbyScreen, "LobbyScreen not found in scene.");
+            Assert.IsNotNull(joinByCodeScreen, "JoinByCodeScreen not found in scene.");
             Assert.AreEqual(9, cellViews.Length, "Expected 9 CellView instances.");
-            Assert.AreEqual(4, visibilities.Length, "Expected 4 FlowScreenVisibility (3 screens + exit button).");
+            Assert.AreEqual(6, visibilities.Length, "Expected 6 FlowScreenVisibility (5 screens + exit button).");
 
             AssertNoNullReferenceFields(gameManager);
             AssertNoNullReferenceFields(flow);
@@ -54,6 +61,8 @@ namespace TicTacFade.PlayModeTests
             AssertNoNullReferenceFields(menuScreen);
             AssertNoNullReferenceFields(resultScreen);
             AssertNoNullReferenceFields(exitMatchButton);
+            AssertNoNullReferenceFields(lobbyScreen);
+            AssertNoNullReferenceFields(joinByCodeScreen);
             foreach (var visibility in visibilities)
                 AssertNoNullReferenceFields(visibility);
             foreach (var cellView in cellViews)

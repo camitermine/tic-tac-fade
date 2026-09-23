@@ -58,6 +58,7 @@ Assets/_Project/
     ```powershell
     & "<UnityEditorPath>\Unity.exe" -batchmode -projectPath . -runTests -testPlatform EditMode -testResults ./TestResults/editmode.xml
     ```
+- If `run_tests` for PlayMode via MCP reports 0 tests run, do not count it as a pass: force a recompile and retry; if it persists, Cami runs the suite from the Editor's Test Runner. Root cause not determined.
 - A task is **not done** until:
   - the project compiles with no console errors (check via MCP), and
   - the tests pass.

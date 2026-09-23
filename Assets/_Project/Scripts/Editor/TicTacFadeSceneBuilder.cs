@@ -6,6 +6,7 @@ using UnityEngine.Rendering.Universal;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 using TicTacFade.Game;
+using TicTacFade.Net;
 using TicTacFade.UI;
 
 namespace TicTacFade.EditorTools
@@ -45,15 +46,21 @@ namespace TicTacFade.EditorTools
             var gameManager = gameManagerGO.AddComponent<GameManager>();
             SetPrivateField(gameManager, "config", GetOrCreateGameConfigAsset());
 
+            CreateNetworkManager();
+            var sessionService = new GameObject("SessionService").AddComponent<UgsSessionService>();
+
             var matchFlowGO = new GameObject("MatchFlow");
             var matchFlow = matchFlowGO.AddComponent<MatchFlow>();
             SetPrivateField(matchFlow, "gameManager", gameManager);
+            SetPrivateField(matchFlow, "sessionService", sessionService);
 
-            // Sibling order = draw order: the menu goes last so it covers
-            // everything while visible.
+            // Sibling order = draw order. Hidden screens don't block input
+            // (FlowScreenVisibility turns off blocksRaycasts).
             CreateGameScreen(canvasGO.transform, gameManager, matchFlow);
             CreateResultScreen(canvasGO.transform, matchFlow);
             CreateMenuScreen(canvasGO.transform, matchFlow);
+            CreateLobbyScreen(canvasGO.transform, matchFlow);
+            CreateJoinByCodeScreen(canvasGO.transform, matchFlow);
 
             EditorSceneManager.SaveScene(scene, ScenePath);
 
@@ -195,41 +202,144 @@ namespace TicTacFade.EditorTools
         {
             var screenRT = CreateSafeAreaScreen("MenuScreen", parent, flow, FlowState.Menu);
 
-            // Opaque background so the (hidden anyway) game screen never
-            // shows through while the menu is up.
-            var backgroundRT = CreateUIObject("Background", screenRT, typeof(Image));
-            StretchFull(backgroundRT);
-            backgroundRT.GetComponent<Image>().color = new Color(0.05f, 0.05f, 0.08f);
+            var layoutRT = CreateCenteredColumn("MenuLayout", screenRT, 96f);
+            CreateLabel("Title", layoutRT, "Tic-Tac-Fade", 96, Color.white, 160f);
 
-            var layoutRT = CreateUIObject("MenuLayout", screenRT, typeof(VerticalLayoutGroup), typeof(ContentSizeFitter));
-            layoutRT.anchorMin = new Vector2(0f, 0.5f);
-            layoutRT.anchorMax = new Vector2(1f, 0.5f);
-            layoutRT.pivot = new Vector2(0.5f, 0.5f);
-            layoutRT.anchoredPosition = Vector2.zero;
-            layoutRT.sizeDelta = new Vector2(0f, layoutRT.sizeDelta.y);
-            ConfigureVerticalLayout(layoutRT, new RectOffset(96, 96, 0, 0), 96f);
-
-            var titleRT = CreateUIObject("Title", layoutRT, typeof(Text), typeof(LayoutElement));
-            var title = titleRT.GetComponent<Text>();
-            ConfigureText(title, 96, TextAnchor.MiddleCenter, Color.white);
-            title.text = "Tic-Tac-Fade";
-            title.horizontalOverflow = HorizontalWrapMode.Wrap;
-            title.verticalOverflow = VerticalWrapMode.Overflow;
-            var titleLayout = titleRT.GetComponent<LayoutElement>();
-            titleLayout.preferredHeight = 160f;
-            titleLayout.flexibleWidth = 1f;
-
-            // The online buttons (create room, join with code) are added
-            // here as siblings of PlayLocalButton; the layout needs no change.
             var buttonsRT = CreateUIObject("MenuButtons", layoutRT, typeof(VerticalLayoutGroup), typeof(LayoutElement));
             ConfigureVerticalLayout(buttonsRT, new RectOffset(0, 0, 0, 0), 32f);
             buttonsRT.GetComponent<LayoutElement>().flexibleWidth = 1f; // nested layout group: see CountsRow in CreateHud
 
             var playLocalButton = CreateButton("PlayLocalButton", buttonsRT, "Jugar local", 48, new Color(0.13f, 0.95f, 0.95f), Color.black, 130f);
+            var createRoomButton = CreateButton("CreateRoomButton", buttonsRT, "Crear sala", 48, new Color(1f, 0.2f, 0.6f), Color.black, 130f);
+            var joinByCodeButton = CreateButton("JoinByCodeButton", buttonsRT, "Unirse con código", 48, new Color(1f, 1f, 1f, 0.15f), Color.white, 130f);
+
+            // "Conectando..." while creating a room, or the last error.
+            var statusLabel = CreateLabel("MenuStatus", layoutRT, string.Empty, 32, new Color(1f, 0.55f, 0.15f), 100f);
 
             var menuScreen = screenRT.gameObject.AddComponent<MenuScreen>();
             SetPrivateField(menuScreen, "flow", flow);
             SetPrivateField(menuScreen, "playLocalButton", playLocalButton);
+            SetPrivateField(menuScreen, "createRoomButton", createRoomButton);
+            SetPrivateField(menuScreen, "joinByCodeButton", joinByCodeButton);
+            SetPrivateField(menuScreen, "statusLabel", statusLabel);
+        }
+
+        static void CreateLobbyScreen(Transform parent, MatchFlow flow)
+        {
+            var screenRT = CreateSafeAreaScreen("LobbyScreen", parent, flow, FlowState.Lobby);
+            var layoutRT = CreateCenteredColumn("LobbyLayout", screenRT, 48f);
+
+            CreateLabel("LobbyTitle", layoutRT, "Código de la sala", 48, new Color(1f, 1f, 1f, 0.7f), 80f);
+            // Large and high-contrast: if the clipboard fails on a device the
+            // code still has to be easy to read and copy by hand.
+            var codeLabel = CreateLabel("CodeLabel", layoutRT, string.Empty, 120, Color.white, 180f);
+            var copyButton = CreateButton("CopyButton", layoutRT, "Copiar", 40, new Color(1f, 1f, 1f, 0.15f), Color.white, 110f);
+            var statusLabel = CreateLabel("LobbyStatus", layoutRT, string.Empty, 40, new Color(0.13f, 0.95f, 0.95f), 130f);
+            var cancelButton = CreateButton("LobbyCancelButton", layoutRT, "Cancelar", 40, new Color(1f, 1f, 1f, 0.15f), Color.white, 110f);
+
+            var lobbyScreen = screenRT.gameObject.AddComponent<LobbyScreen>();
+            SetPrivateField(lobbyScreen, "flow", flow);
+            SetPrivateField(lobbyScreen, "codeLabel", codeLabel);
+            SetPrivateField(lobbyScreen, "copyButton", copyButton);
+            SetPrivateField(lobbyScreen, "statusLabel", statusLabel);
+            SetPrivateField(lobbyScreen, "cancelButton", cancelButton);
+        }
+
+        static void CreateJoinByCodeScreen(Transform parent, MatchFlow flow)
+        {
+            var screenRT = CreateSafeAreaScreen("JoinByCodeScreen", parent, flow, FlowState.JoinByCode);
+            var layoutRT = CreateCenteredColumn("JoinLayout", screenRT, 48f);
+
+            CreateLabel("JoinTitle", layoutRT, "Unirse con código", 56, Color.white, 100f);
+            var codeInput = CreateCodeInput(layoutRT);
+            var statusLabel = CreateLabel("JoinStatus", layoutRT, string.Empty, 32, new Color(1f, 0.55f, 0.15f), 100f);
+            var joinButton = CreateButton("JoinButton", layoutRT, "Unirse", 48, new Color(0.13f, 0.95f, 0.95f), Color.black, 130f);
+            var cancelButton = CreateButton("JoinCancelButton", layoutRT, "Cancelar", 40, new Color(1f, 1f, 1f, 0.15f), Color.white, 110f);
+
+            var joinScreen = screenRT.gameObject.AddComponent<JoinByCodeScreen>();
+            SetPrivateField(joinScreen, "flow", flow);
+            SetPrivateField(joinScreen, "codeInput", codeInput);
+            SetPrivateField(joinScreen, "joinButton", joinButton);
+            SetPrivateField(joinScreen, "cancelButton", cancelButton);
+            SetPrivateField(joinScreen, "statusLabel", statusLabel);
+        }
+
+        static InputField CreateCodeInput(Transform parent)
+        {
+            var inputRT = CreateUIObject("CodeInput", parent, typeof(Image), typeof(InputField), typeof(LayoutElement));
+            var background = inputRT.GetComponent<Image>();
+            background.sprite = AssetDatabase.GetBuiltinExtraResource<Sprite>("UI/Skin/UISprite.psd");
+            background.type = Image.Type.Sliced;
+            background.color = new Color(1f, 1f, 1f, 0.12f);
+            var layoutElement = inputRT.GetComponent<LayoutElement>();
+            layoutElement.preferredHeight = 150f;
+            layoutElement.flexibleWidth = 1f;
+
+            var textRT = CreateUIObject("Text", inputRT, typeof(Text));
+            StretchFull(textRT);
+            var text = textRT.GetComponent<Text>();
+            ConfigureText(text, 80, TextAnchor.MiddleCenter, Color.white);
+            text.supportRichText = false;
+
+            var placeholderRT = CreateUIObject("Placeholder", inputRT, typeof(Text));
+            StretchFull(placeholderRT);
+            var placeholder = placeholderRT.GetComponent<Text>();
+            ConfigureText(placeholder, 48, TextAnchor.MiddleCenter, new Color(1f, 1f, 1f, 0.35f));
+            placeholder.text = "Código";
+
+            var input = inputRT.GetComponent<InputField>();
+            input.textComponent = text;
+            input.placeholder = placeholder;
+            input.characterValidation = InputField.CharacterValidation.Alphanumeric;
+            input.characterLimit = 12;
+            return input;
+        }
+
+        /// <summary>
+        /// Opaque full-screen background plus a vertically centered,
+        /// full-width column (VLG + ContentSizeFitter) for a screen's content.
+        /// </summary>
+        static RectTransform CreateCenteredColumn(string name, RectTransform screen, float spacing)
+        {
+            var backgroundRT = CreateUIObject("Background", screen, typeof(Image));
+            StretchFull(backgroundRT);
+            backgroundRT.GetComponent<Image>().color = new Color(0.05f, 0.05f, 0.08f);
+
+            var columnRT = CreateUIObject(name, screen, typeof(VerticalLayoutGroup), typeof(ContentSizeFitter));
+            columnRT.anchorMin = new Vector2(0f, 0.5f);
+            columnRT.anchorMax = new Vector2(1f, 0.5f);
+            columnRT.pivot = new Vector2(0.5f, 0.5f);
+            columnRT.anchoredPosition = Vector2.zero;
+            columnRT.sizeDelta = new Vector2(0f, columnRT.sizeDelta.y);
+            ConfigureVerticalLayout(columnRT, new RectOffset(96, 96, 0, 0), spacing);
+            return columnRT;
+        }
+
+        static Text CreateLabel(string name, Transform parent, string text, int fontSize, Color color, float preferredHeight)
+        {
+            var labelRT = CreateUIObject(name, parent, typeof(Text), typeof(LayoutElement));
+            var label = labelRT.GetComponent<Text>();
+            ConfigureText(label, fontSize, TextAnchor.MiddleCenter, color);
+            label.text = text;
+            label.horizontalOverflow = HorizontalWrapMode.Wrap;
+            label.verticalOverflow = VerticalWrapMode.Overflow;
+            var layoutElement = labelRT.GetComponent<LayoutElement>();
+            layoutElement.preferredHeight = preferredHeight;
+            layoutElement.flexibleWidth = 1f;
+            return label;
+        }
+
+        /// <summary>
+        /// NetworkManager + UnityTransport: Multiplayer Services' Relay
+        /// network starts the Netcode host/client on this object, and fails
+        /// if NetworkManager.Singleton isn't set.
+        /// </summary>
+        static void CreateNetworkManager()
+        {
+            var networkGO = new GameObject("NetworkManager");
+            var transport = networkGO.AddComponent<Unity.Netcode.Transports.UTP.UnityTransport>();
+            var networkManager = networkGO.AddComponent<Unity.Netcode.NetworkManager>();
+            networkManager.NetworkConfig.NetworkTransport = transport;
         }
 
         static void ConfigureVerticalLayout(RectTransform rt, RectOffset padding, float spacing)

@@ -11,5 +11,7 @@ namespace TicTacFade.Game
         Menu = 0,
         Playing = 1,
         Result = 2,
+        Lobby = 3,
+        JoinByCode = 4,
     }
 }

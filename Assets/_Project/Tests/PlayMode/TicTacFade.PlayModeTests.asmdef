@@ -6,7 +6,11 @@
         "UnityEditor.TestRunner",
         "TicTacFade.Core",
         "TicTacFade.Game",
-        "TicTacFade.UI"
+        "TicTacFade.UI",
+        "TicTacFade.Net",
+        "Unity.Services.Core",
+        "Unity.Services.Multiplayer",
+        "Unity.Netcode.Runtime"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],

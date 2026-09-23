@@ -372,6 +372,136 @@ El objetivo es que quede visible **qué se le pidió a la IA, qué produjo y qu�
 
 ---
 
+## [13] 2026-09-23 — Online iteración 1: salas con código, sin sincronización de juego
+
+**Objetivo:** que dos jugadores se encuentren en una sala con un código y queden conectados. Al conectarse, ambos ven "Rival conectado" y nada más. La sincronización de jugadas es la iteración siguiente.
+
+**Pedido / prompt:** capa `TicTacFade.Net` detrás de una interfaz en Game; Unity Services + autenticación anónima; perfiles distintos por instancia de Multiplayer Play Mode; estados nuevos al final de `FlowState` con sus filas en la tabla; "Crear sala" → sala de espera (código grande, copiar, cancelar); "Unirse con código" → pantalla con campo, unirse, cancelar, errores legibles sin salir; cada cancelar con destino explícito; estados de carga con botones deshabilitados y "Conectando..."; errores de red con mensaje y vuelta a un estado estable. Paquetes autorizados: Multiplayer Services, Netcode for GameObjects, Multiplayer Play Mode.
+
+**Qué hizo la IA:**
+- **Paquetes:** Multiplayer Services 2.3.3 ya estaba (instalado por Cami). Instaló Netcode for GameObjects 2.13.3 y Multiplayer Play Mode 3.0.0, las versiones que el registry resuelve para Unity 6000.6. MPPM 3.0.0 es *builtin* en 6.6. Por dependencia entraron `transport` 2.7.3, `services.core` 1.18.0, `services.authentication` 3.7.4, `qos`, `wire`, `deployment` y `deployment.api`.
+- Antes de diseñar, leyó el código de los paquetes instalados en vez de asumir la API:
+  - `CurrentPlayer.IsMainEditor`/`Tags` es la API de identidad de MPPM (no hay índice de jugador).
+  - Authentication ya deriva un perfil por instancia desde los argumentos `-editor-mode -name`, pero solo con el perfil "default" y sin documentarlo.
+  - Services Core no se autoinicializa.
+  - `WithRelayNetwork` exige `NetworkManager.Singleton`.
+  - `StopAsync` del SDK espera el apagado del `NetworkManager` y el SDK pide no llamar a `Shutdown()` a mano.
+- **Game:**
+  - `ISessionService`, `SessionServiceBehaviour` (base serializable), `SessionResult` y `SessionFailure`.
+  - `FlowState` suma `Lobby = 3` y `JoinByCode = 4`.
+  - `MatchFlow`: filas nuevas en la tabla (`Menu → {Playing, Lobby, JoinByCode}`, `Lobby → {Menu}`, `JoinByCode → {Lobby, Menu}`). Intenciones `CreateRoom`, `OpenJoinByCode`, `JoinRoom`, `CancelJoinByCode`, `LeaveRoom`. Flag `IsBusy`: el flujo ignora toda intención mientras hay una operación en curso, así que la protección contra el doble toque no depende de la UI. Validación local del código (vacío o no alfanumérico no sale a la red), normalizado a mayúsculas.
+- **Net** (asmdef nuevo `TicTacFade.Net`, `Net → Game → Core`):
+  - `UgsSessionService`: sesiones privadas de 2 con Relay, inicialización y login perezosos, timeout propio (`SerializeField`, 15 s). Si una operación termina después del timeout, la sala huérfana se abandona. El host cierra la sala con `DeleteAsync`. Antes de cada crear/unirse espera a que el `NetworkManager` quede libre, y si el SDK lo dejara corriendo lo apaga como último recurso.
+  - `SessionFailureMapper` traduce las excepciones del SDK.
+  - `PlayModeAuthProfile` elige el perfil de autenticación de cada jugador virtual de MPPM.
+- **UI:**
+  - `MenuScreen` suma "Crear sala", "Unirse con código" y una línea de estado ("Conectando..." / error).
+  - `LobbyScreen`: código a 120 pt, "Copiar", estado ("Esperando rival..." / "Rival conectado" / "Cerrando sala...") y "Cancelar".
+  - `JoinByCodeScreen`: `InputField` alfanumérico, "Unirse", "Cancelar" y error.
+  - `SessionFailureMessages` tiene los textos en español.
+- **Builder:** `NetworkManager` + `UnityTransport`, `SessionService`, `LobbyScreen`, `JoinByCodeScreen` (las dos con `CreateSafeAreaScreen`) y los helpers `CreateCenteredColumn`/`CreateLabel`/`CreateCodeInput`.
+- **Tests PlayMode nuevos** (`OnlineFlowTests`, con `FakeSessionService` sin red inyectado con `MatchFlow.SetSessionService`):
+  - partida local completa + revancha + salir sin inicializar Unity Services (`UnityServices.State == Uninitialized`, pedido de Cami);
+  - doble toque en "Crear sala" crea una sola sala;
+  - falla de red se queda en el menú con mensaje;
+  - código vacío no sale a la red;
+  - código rechazado se queda en la pantalla con error;
+  - unirse muestra "Rival conectado";
+  - rival entra y sale;
+  - cancelar desde la pantalla de código;
+  - crear → cancelar dos veces y unirse → cancelar dos veces, y después "Jugar local" arranca con X;
+  - sala perdida vuelve al menú con mensaje.
+  - `SceneWiringAndInputTests` suma las pantallas nuevas al chequeo de referencias.
+- **Hallazgo contra el servicio real:** un código inexistente con formato válido (`BBBBBB`) llega como `SessionNotFound` y se muestra "Código inválido", bien. Pero `ZZZZZZ` llegó como `SessionError.Unknown` ("contains an invalid character 'Z'"): el alfabeto de los códigos de lobby no incluye todas las letras. Leyendo `LobbyConverter.ToSessionException`, el SDK descarta la `LobbyServiceException` original y solo traduce `LobbyNotFound`, así que sala llena y código mal formado son indistinguibles. La primera versión del mapper buscaba `LobbyServiceException` en la cadena de excepciones interna: código muerto, se sacó. Se agregó `SessionFailure.JoinRejected` con un mensaje genérico de unión ("No se pudo unir a la sala. Revisá el código o pedí uno nuevo.") en vez del "No se pudo conectar", que sugería un problema de red. No se validó el alfabeto localmente porque no está documentado.
+
+**Revisión humana:**
+- Aprobó el plan con tres respuestas:
+  - inicialización perezosa (Cami corrigió su propio pedido de inicializar al arrancar) más un test que confirme que el modo local nunca inicializa Unity Services;
+  - sala llena con mensaje genérico si el SDK no la distingue;
+  - timeout como `SerializeField` del servicio.
+- Sumó a la verificación manual: crear → cancelar → crear y unirse → cancelar → unirse dos veces seguidas (por si el `NetworkManager` no se apaga del todo), "Jugar local" después de cancelar una sala, y "Copiar" en el celular (si el portapapeles falla, el código tiene que quedar legible para copiarlo a mano).
+
+**Verificación:**
+- Compila sin errores. Quedan warnings `CS0618` de `FindFirstObjectByType`/`FindObjectsSortMode` (obsoletos en Unity 6.6) en `SceneWiringAndInputTests.cs`, código previo a esta tarea: anotado, no tocado. En el archivo nuevo se usó `FindAnyObjectByType`.
+- EditMode 33/33. PlayMode 14/14 (4 existentes + 10 nuevos); 31/31 después de la segunda vuelta (ver abajo).
+- Builder corrido 2 veces: una instancia de cada pantalla, `NetworkManager` y `SessionService`; las cinco `SafeArea` con los cuatro bordes; `NetworkManager` con `UnityTransport`.
+- **Contra el servicio real, en el editor principal (una sola instancia):**
+  - login anónimo OK (perfil `default`);
+  - crear sala da el código `LD7987` con el `NetworkManager` como host;
+  - cancelar vuelve al menú con el `NetworkManager` apagado del todo (`IsListening=false`, `ShutdownInProgress=false`);
+  - una segunda creación funciona (código `B6DRRR`);
+  - `BBBBBB` → "Código inválido";
+  - cancelar la pantalla de código → menú, y "Jugar local" arranca con X;
+  - sin errores en consola.
+- **Device real (Cami, APK en dos dispositivos distintos):** crear sala y unirse con el código funciona, y los dos quedan conectados en la sala de espera. La partida no arranca, que es lo esperado en esta iteración (la transición `Lobby → Playing` es de la siguiente).
+- **Pendiente (Cami), con dos jugadores en Multiplayer Play Mode:** pasos abajo.
+- **Pendiente (Cami):** "Copiar" en el celular.
+
+**Cómo reproducir la prueba con Multiplayer Play Mode** (se repite en cada iteración de online):
+1. Abrir `Window > Multiplayer > Multiplayer Play Mode` (ruta documentada de MPPM; en Unity 6.6 el paquete es builtin y no se pudo confirmar la ruta del menú por código: si difiere, corregir este paso).
+2. Activar **Player 2** (y **Player 3** solo para la prueba de sala llena). Esperar a que termine de abrir su ventana.
+3. Tener abierta la escena `Assets/_Project/Scenes/TicTacFadeGame.unity` y entrar en Play en el editor principal: los jugadores virtuales entran en Play con él.
+4. Identidades distintas: en la consola de cada instancia tiene que aparecer, en el primer crear/unirse, `Tic-Tac-Fade: signed in anonymously. PlayerId=..., profile=...`. El editor principal usa `profile=default`; cada jugador virtual, `profile=mppm_xxxxxxxx`. Los `PlayerId` tienen que ser distintos entre instancias.
+5. **Crear y unirse:** Player 1 → "Crear sala". Tiene que aparecer "Conectando..." con los botones deshabilitados y después la sala de espera con el código y "Esperando rival...". Player 2 → "Unirse con código" → escribir el código → "Unirse" → sala de espera con "Rival conectado". Player 1 tiene que pasar a "Rival conectado".
+6. **Código inválido:** Player 2 → "Unirse con código" → `BBBBBB` (formato válido, sala inexistente) → "Código inválido...", sigue en la pantalla. Con un código con caracteres fuera del alfabeto (p. ej. `ZZZZZZ`) → también "Código inválido...", y esta vez sin salir a la red.
+7. **Cancelar desde la sala de espera:** con los dos adentro, Player 1 → "Cancelar" → menú. Player 2 tiene que volver al menú con "La sala se cerró.".
+8. **Cancelar desde la pantalla de código:** Player 2 → "Unirse con código" → "Cancelar" → menú, sin mensaje.
+9. **Dos veces seguidas:** Player 1: crear → cancelar → crear → cancelar (la segunda creación tiene que dar otro código sin error). Player 2: unirse → cancelar → unirse → cancelar, contra una sala abierta de Player 1.
+10. **Local después de online:** tras cancelar una sala, "Jugar local" arranca una partida normal con X.
+11. **Sala llena (opcional, Player 3):** Player 1 crea, Player 2 se une, Player 3 intenta unirse con el mismo código → mensaje genérico "No se pudo unir a la sala..." (el SDK no distingue sala llena, ver arriba).
+12. En ninguna instancia tiene que haber errores en consola. Los `LogWarning` de "session operation failed" son esperados en los casos de error.
+
+**Segunda vuelta (tras la prueba de Cami en device y los warnings que capturó):**
+- **Device (Cami):** "Copiar" funciona en el celular y el flujo es correcto.
+- **Warning `[Netcode] Singleton is not null after invoking OnDestroy`:**
+  - Causa: `NetworkManager` se mueve solo a `DontDestroyOnLoad` y el Singleton queda siendo el primero. Cada recarga de escena trae uno nuevo y el anterior sobrevive. Al salir de Play, cada uno que sobra tira el warning.
+  - Reproducido a mano: una recarga deja 2 `NetworkManager` en DDOL y el warning aparece al salir; Play → Stop sin recarga, no aparece.
+  - El primer intento de reproducirlo dio un falso negativo: contó 1 `NetworkManager` porque la recarga todavía no había ocurrido. Se repitió verificando que la escena se hubiera recargado de verdad.
+  - El juego carga la escena una sola vez; los PlayMode tests la recargan en cada test.
+  - Fix, solo en tests: `NetworkTestCleanup` y un `[UnityTearDown]` en las dos clases de PlayMode que destruye todos los `NetworkManager` después de cada test.
+  - Verificado: suite completa (unas 15 recargas) sin el warning. No se volvió a correr la suite sin el fix para comparar; la reproducción manual cubre el "antes".
+  - Si algún día volver al menú pasa a ser una recarga de escena, esto hay que resolverlo en el juego, no solo en los tests.
+- **Warning de `ZZZZZZ`:** era del código previo al fix de `JoinRejected` (línea 186, `(Unknown)`), esperado.
+- **Alfabeto del código (pedido de Cami):**
+  - El mensaje "invalid character" no está en el SDK: lo devuelve el servidor. El SDK no documenta el formato de los códigos de Lobby.
+  - Sí documenta el de Relay (`Relay/Models/JoinRequest.cs`): sin distinguir mayúsculas, 6 a 12 caracteres, solo `6789BCDFGHJKLMNPQRTW`.
+  - El servicio real es consistente con eso: generó `LD7987` y `B6DRRR`, rechazó la `Z` y aceptó el formato de `BBBBBB`.
+  - Se implementó `JoinCodeFormat` en Net, expuesto como `ISessionService.IsWellFormedCode`, porque el formato es del proveedor y Game no debe conocerlo. Reemplaza la validación alfanumérica anterior de `MatchFlow`, que era más permisiva que el servicio.
+  - `MapJoin`: un error de formato que igual llegue del servicio se reconoce por el mensaje (única señal que deja el SDK) y da `InvalidCode`, no `JoinRejected`.
+  - El fake usa la regla de formato real; los códigos de los tests pasaron a `BCD678`/`BCD789`.
+- **Tests nuevos:** `JoinByCode_CharacterOutsideAlphabet_RejectedLocallyAsInvalidCode` (`ZZZZZZ` no sale a la red y muestra "Código inválido"), y `NetSessionRulesTests`: 16 casos de formato y de mapeo, incluido el mensaje exacto que devolvió el servicio real.
+- **Runner de MCP con 0 tests:**
+  - Durante un rato, `run_tests(PlayMode)` vía MCP ejecutó 0 tests (tres intentos: todos, por assembly y por nombre), mientras el editor listaba los 14 y EditMode vía MCP andaba.
+  - La hipótesis de la IA (jugadores virtuales de MPPM activos) resultó falsa: con MPPM apagado siguió dando 0, y Cami corrió los tests a mano y pasaban.
+  - Después de recompilar volvió a funcionar (31/31). Causa no determinada; probablemente del lado del runner de MCP.
+- **Verificación de esta vuelta:** compila sin errores; EditMode 33/33; PlayMode 31/31 vía MCP; consola sin errores ni warnings después de la suite.
+
+**Tercera vuelta:**
+- **Regla del CLAUDE.md sobre el runner de MCP:**
+  - Cami había propuesto: "No correr los tests PlayMode con jugadores virtuales de Multiplayer Play Mode activos: el runner del editor principal ejecuta 0 tests."
+  - Se descartó porque la evidencia la desmintió: con MPPM apagado el runner de MCP siguió dando 0, los tests corridos a mano pasaban, y el runner volvió a funcionar tras recompilar sin tocar MPPM.
+  - Se agregó en su lugar la redacción de la IA, aprobada por Cami (en inglés, como el resto del CLAUDE.md): si `run_tests` de PlayMode vía MCP reporta 0 tests, no darlo como pasado; recompilar y reintentar; si persiste, Cami corre la suite desde el Test Runner del editor. Causa no determinada.
+- **Red de seguridad para el alfabeto (pedido de Cami):**
+  - Al crear una sala, el código que devuelve el servicio se valida contra `JoinCodeFormat`. Si no pasa, se loguea un error explícito: la regla local se volvió más estricta que el servicio.
+  - El riesgo es asimétrico: una regla demasiado estricta impide unirse a salas reales, y sin este chequeo no habría ninguna señal.
+  - Implementado como `JoinCodeFormat.CheckGeneratedCode`, testeable sin red, y llamado desde `UgsSessionService.Attach` solo para el host.
+  - El mensaje del log está en inglés por la convención de los `.cs`: "the room code format changed: local validation would reject the generated code '…'".
+  - Tests: dos códigos reales (uno en minúsculas) pasan sin loguear; `AB12CD` devuelve false y loguea el error (`LogAssert.Expect`, así que el test falla si el chequeo deja de loguear).
+- **Verificación:** compila sin errores; EditMode 33/33; PlayMode 34/34 vía MCP. El único error en consola es el que el test del caso negativo genera a propósito.
+
+**Pendientes de diseño anotados:**
+- La transición `Lobby → Playing` (arrancar la partida online al conectarse el rival) es de la iteración siguiente.
+- En online, "Salir" de una partida va a ser "abandonar" (ver [12]).
+- ~~No hay test automático de `SessionFailureMapper`~~: resuelto en la segunda vuelta (`NetSessionRulesTests`). `SessionException` tiene un constructor público de 3 argumentos.
+
+**Aprendizajes:**
+- Leer el código del paquete instalado antes de diseñar encontró tres cosas que habrían sido bugs o supuestos falsos: el perfil automático de MPPM oculto, que `WithRelayNetwork` exige un `NetworkManager` y que el SDK descarta la excepción original de lobby.
+- Probar contra el servicio real, aunque sea con una sola instancia, detectó que un código mal formado mostraba "No se pudo conectar". Los tests con fake no lo podían ver, porque el fake devuelve lo que el test le dice.
+
+**Commit(s):** — (sin commitear; Cami revisa y commitea).
+
+---
+
 ## [0] 2026-09-22 — Definición del MVP y setup de documentación
 
 **Objetivo:** revisar el GDD v0.1, cerrar las decisiones pendientes y preparar el repo para el trabajo con agentes.

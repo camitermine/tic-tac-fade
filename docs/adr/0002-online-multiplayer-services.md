@@ -44,6 +44,21 @@ Por la red viajan **jugadas** (`Move`), no el estado del tablero. Cada cliente a
 
 La capa `Net` se esconde detrás de una interfaz propia (`IMatchTransport` o similar) en `Game`. Si más adelante hay que cambiar de proveedor, el Core y la UI no se tocan.
 
+## Implementación (actualizado 2026-09-23, online iteración 1: salas sin sincronización)
+
+Se mantiene la decisión. Cómo quedó implementada y en qué se precisa lo de arriba:
+
+- **Interfaz:** la del ciclo de vida de la sala se llama `ISessionService` (en `Game`): crear, unirse con código, salir, y eventos de rival conectado/desconectado y sala perdida. Las fallas vuelven como un enum propio (`SessionFailure`), nunca como excepciones del SDK. El envío de jugadas (lo que este ADR llamaba `IMatchTransport`) es de la iteración siguiente y puede ser otra interfaz.
+- **Wiring sin singletons:** Unity no serializa campos de interfaz, así que la escena referencia una base abstracta `SessionServiceBehaviour : MonoBehaviour, ISessionService`. `TicTacFade.Net` aporta `UgsSessionService` y los tests un fake sin red.
+- **Paquetes:** `com.unity.services.multiplayer` 2.3.3, `com.unity.netcode.gameobjects` 2.13.3 y `com.unity.multiplayer.playmode` 3.0.0 (builtin en Unity 6.6).
+- **Sesiones:** privadas, `MaxPlayers = 2`, con `WithRelayNetwork()`. El SDK arranca el host/cliente de Netcode sobre el `NetworkManager` + `UnityTransport` de la escena, y falla si no existe. Al salir se usa `LeaveAsync` (el SDK pide no llamar a `NetworkManager.Shutdown()` a mano). El host usa `DeleteAsync`, para que el otro jugador vea la sala cerrada en vez de quedar como host migrado de una sala vacía. Antes de cada crear/unirse se espera a que el `NetworkManager` quede libre.
+- **Inicialización perezosa:** Unity Services y la autenticación anónima se inicializan en el primer "Crear sala" o "Unirse", no al arrancar. El modo local nunca toca UGS (hay un test PlayMode que lo verifica).
+- **Multiplayer Play Mode:** cada jugador virtual usa un perfil de autenticación propio, derivado de la ruta de su clon (`PlayModeAuthProfile`). El paquete de Authentication ya lo hace leyendo argumentos de línea de comandos, pero como comportamiento interno no documentado; acá queda explícito.
+- **Limitación del SDK (verificada contra el servicio real):** `LobbyConverter.ToSessionException` descarta la excepción original y solo conserva "lobby not found" (→ `SessionNotFound`). Sala llena, código con caracteres inválidos, etc. llegan como `SessionError.Unknown` con solo un mensaje. Cómo se maneja:
+  - **Formato del código, validado localmente** (`JoinCodeFormat`, en Net y detrás de `ISessionService.IsWellFormedCode`, porque el formato es del proveedor): alfabeto `6789BCDFGHJKLMNPQRTW`, 6 a 12 caracteres. El SDK lo documenta para los join codes de Relay; para los de Lobby no hay documentación, pero el servicio real es consistente con esa regla (ver ai-log [13]). Un código fuera de formato da "Código inválido" sin salir a la red.
+  - Si el servicio igual devuelve un error de formato, se reconoce por el mensaje (única señal que deja el SDK) y también da "Código inválido".
+  - Cualquier otro rechazo al unirse (p. ej. sala llena) da un mensaje genérico: "No se pudo unir a la sala. Revisá el código o pedí uno nuevo.".
+
 ## Referencias
 
 - https://docs.unity.com/ugs/en-us/manual/mps-sdk/manual/join-session
