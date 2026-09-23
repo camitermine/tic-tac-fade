@@ -15,6 +15,7 @@
 | 0.2 | Sept 2026 | Migración al repo. Regla de empate (repetición + tope), timer por turno con modo ausente, definición general de "vida", indicadores para ambos jugadores, invariante de jugada legal, alcance del MVP. |
 | 0.3 | Sept 2026 | Lenguaje visual final del indicador de vida 1 (badge opaco teñido por dueño) y del ghost piece (marca de opacidad mínima sobre la ficha propia que el FIFO eliminaría, distinta de la marca crítica pasiva). |
 | 0.4 | Sept 2026 | Dirección visual del pase de arte (§6): neón sobre fondo oscuro, X cian/O magenta, formas blancas tintadas por código con glow por Bloom de URP, disolución por shader + partículas. Restricción técnica: Bloom requiere Canvas en Screen Space - Camera, no Overlay. |
+| 0.5 | Sept 2026 | Regla explícita de quién empieza una partida iniciada desde el menú (§3.1). Flujo de pantallas completo con alcance MVP / posterior y decisión de "Crear sala" sin pantalla de configuración (§4.3). |
 
 ---
 
@@ -48,6 +49,7 @@
 - **Jugadores:** 2 (Jugador 1: X, Jugador 2: O).
 - **Turno:** alternado, una acción por turno: colocar una ficha en una casilla libre.
 - **Quién empieza:** en la primera partida, el host (X). En cada revancha se alterna quién empieza.
+  - **Partida desde el menú (v0.5):** una partida iniciada desde el menú principal es una primera partida: empieza X. La alternancia solo aplica a revanchas consecutivas; volver al menú (desde el resultado o saliendo de una partida en curso) la reinicia.
 
 ### 3.2 Lógica FIFO
 
@@ -127,9 +129,21 @@ Representación, aplicada a las fichas de **ambos jugadores**:
 - Resaltado de la línea ganadora.
 - Mensaje de resultado: victoria, derrota o empate, indicando el motivo (repetición, tope, abandono, desconexión).
 
-### 4.3 Flujo de pantallas (MVP)
+### 4.3 Flujo de pantallas
 
-`Menú principal → (Local | Crear sala | Unirse con código) → Sala de espera → Partida → Resultado → (Revancha | Menú)`
+```
+Menú principal
+  ├─ Jugar local       → Partida (local) → Resultado → Revancha | Menú
+  ├─ Crear sala        → Sala de espera (muestra el código, botón copiar, cancelar)
+  │                         └─ al unirse el rival → Partida (online) → Resultado → Revancha | Menú
+  └─ Unirse con código → Pantalla de ingreso de código (campo de texto, unirse, cancelar)
+                            └─ éxito → Sala de espera → Partida (online)
+```
+
+- Todas las pantallas tienen una acción de volver o cancelar que regresa a la pantalla anterior.
+- **MVP:** menú, partida local, resultado, crear sala, sala de espera, unirse con código.
+- **Posterior al MVP:** configuración de la sala (nombre y opciones), salas públicas y listado de salas, pantalla de configuración, perfil, nivel y noticias.
+- **Decisión de diseño:** "Crear sala" va directo a la sala de espera, sin pantalla intermedia de configuración. El nombre de sala solo tendría sentido con salas públicas, que están fuera del MVP.
 
 ---
 

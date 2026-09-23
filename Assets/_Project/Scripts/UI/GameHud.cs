@@ -6,10 +6,12 @@ using TicTacFade.Game;
 namespace TicTacFade.UI
 {
     /// <summary>
-    /// Turn indicator, active-piece counters and end-of-match banner.
-    /// Subscribes to <see cref="GameManager.StateChanged"/> and
-    /// <see cref="GameManager.GameEnded"/> instead of receiving imperative
-    /// calls: Core/Game communicate through events, the UI observes.
+    /// Turn indicator and active-piece counters. Subscribes to
+    /// <see cref="GameManager.StateChanged"/> instead of receiving imperative
+    /// calls: Core/Game communicate through events, the UI observes. The
+    /// end-of-match message lives in <see cref="ResultScreen"/>.
+    /// GameManager never raises StateChanged with a null state, so nothing
+    /// here needs a null guard for the menu (no match yet) window.
     /// </summary>
     public class GameHud : MonoBehaviour
     {
@@ -18,32 +20,23 @@ namespace TicTacFade.UI
         [SerializeField] Text countLabelX;
         [SerializeField] Text countLabelO;
         [SerializeField] Text fadeWarningLabel;
-        [SerializeField] GameObject gameEndedBanner;
-        [SerializeField] Text gameEndedLabel;
 
         void Awake()
         {
             gameManager.StateChanged += OnStateChanged;
-            gameManager.GameEnded += OnGameEnded;
         }
 
         void OnDestroy()
         {
-            if (gameManager == null) return;
-            gameManager.StateChanged -= OnStateChanged;
-            gameManager.GameEnded -= OnGameEnded;
+            if (gameManager != null)
+                gameManager.StateChanged -= OnStateChanged;
         }
 
         void OnStateChanged(GameState state)
         {
             SetTurn(state.CurrentPlayer);
             UpdateActiveCounts(state.GetActiveCount(Occupant.X), state.GetActiveCount(Occupant.O), state.Config.BufferSize);
-
-            if (!state.IsOver)
-                HideGameEndedBanner();
         }
-
-        void OnGameEnded(GameEndedEvent evt) => ShowGameEndedBanner(evt);
 
         void SetTurn(Occupant player)
         {
@@ -64,32 +57,6 @@ namespace TicTacFade.UI
             if (!xFading && !oFading) return string.Empty;
             if (xFading && oFading) return "¡X y O desvaneciendo!";
             return xFading ? "¡X desvaneciendo!" : "¡O desvaneciendo!";
-        }
-
-        void ShowGameEndedBanner(GameEndedEvent evt)
-        {
-            gameEndedBanner.SetActive(true);
-            gameEndedLabel.text = ResolveMessage(evt);
-        }
-
-        void HideGameEndedBanner()
-        {
-            gameEndedBanner.SetActive(false);
-        }
-
-        static string ResolveMessage(GameEndedEvent evt)
-        {
-            switch (evt.Reason)
-            {
-                case GameEndReason.Win:
-                    return $"¡Jugador {(evt.Winner == Occupant.X ? "X" : "O")} gana!";
-                case GameEndReason.DrawByRepetition:
-                    return "Empate por repetición de posición";
-                case GameEndReason.DrawByMoveLimit:
-                    return "Empate por tope de jugadas";
-                default:
-                    return "Fin de la partida";
-            }
         }
     }
 }

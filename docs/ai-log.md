@@ -303,6 +303,75 @@ El objetivo es que quede visible **qué se le pidió a la IA, qué produjo y qu�
 
 ---
 
+## [11] 2026-09-23 — Issue conocido: HUD tapado por el punch-hole en device real
+
+**Objetivo:** dejar registrado un bug real encontrado en hardware (no en el Simulator) sin arreglarlo todavía, y avisar en el prompt de la próxima iteración que su verificación tiene que incluir device real, no solo Simulator.
+
+**Pedido / prompt:** Cami probó el APK en un device real y encontró que el texto del HUD queda tapado por el punch-hole de la cámara — el contenedor de safe area no lo está excluyendo. Pidió anotarlo como issue conocido en el ai-log sin arreglarlo (se resuelve en la iteración de menú y flujo de pantallas), y agregar una línea a `docs/prompts/menu-flow.md` pidiendo que esa iteración verifique el HUD fuera del punch-hole en device real, no solo en el Simulator.
+
+**Qué hizo la IA:**
+- Agregó la línea pedida a la sección de Verificación de `docs/prompts/menu-flow.md`.
+- Antes de registrar la causa probable que dio Cami, la confirmó en el proyecto en vez de darla por buena a ciegas: `ProjectSettings/ProjectSettings.asset` tiene `androidRenderOutsideSafeArea: 1` — confirmado, es el valor actual del proyecto (ya se había visto en la investigación de la parte 1 de UI, sigue igual).
+- No investigó ni intentó arreglar el bug en sí — es explícitamente lo que Cami pidió no hacer todavía.
+
+**Issue conocido (sin resolver):**
+- **Síntoma:** en un device Android real, el texto del HUD (turno, contadores, aviso de desvanecimiento) queda parcial o totalmente tapado por el recorte de la cámara (punch-hole). El componente `SafeArea` (`UnityEngine.UI.SafeArea`, ver entrada [5]) no lo está excluyendo del área visible del HUD.
+- **Causa probable (confirmada como configuración actual, no como diagnóstico completo del bug):** `PlayerSettings.Android.renderOutsideSafeArea` está en `true` (`androidRenderOutsideSafeArea: 1` en `ProjectSettings.asset`) — con eso la app dibuja por debajo del recorte de la cámara, y aparentemente `Screen.safeArea` no está compensando esa zona como se esperaba en este device. No se confirmó la causa raíz exacta (podría ser esa opción, podría ser además/en cambio un problema del propio `SafeArea` component o de cómo está anidado en `TicTacFadeSceneBuilder.CreateHud`) — falta reproducir y diagnosticar con calma.
+- **No reproducible en el Simulator:** ya se había visto en la parte 1 de UI que la simulación de notch/punch-hole del Simulator es aproximada; esto confirma que no alcanza como único método de verificación para safe area en dispositivos con cámara integrada a la pantalla.
+- **Por qué no se arregla ahora:** pedido explícito de Cami — se resuelve en la iteración de menú y flujo de pantallas (`docs/prompts/menu-flow.md`), que ya toca layout de HUD/pantallas y tiene sentido resolverlo ahí en vez de como un parche aislado.
+
+> **Resuelto y corregido en [12]** (verificado en device real, Samsung Galaxy S21 FE): la causa probable de arriba era incorrecta. La causa es que el componente `SafeArea` tenía `Edges = 0` (no respetaba ningún borde). `renderOutsideSafeArea` no era la causa. Tampoco es cierto que el Simulator no lo reproducía: la captura del `Wide Pill Cutout` de la parte 1 ya mostraba el turno a la altura de la pastilla. Ver [12].
+
+**Revisión humana:** N/A — tarea de documentación pura, sin cambios de código.
+
+**Verificación:** `grep` confirmando el valor actual de `androidRenderOutsideSafeArea` en `ProjectSettings.asset`; lectura de `docs/prompts/menu-flow.md` post-edición.
+
+**Aprendizajes:** el Simulator de Unity aproxima el recorte de notch/punch-hole pero no reemplaza probar en hardware real — vale la pena, como hizo Cami, sacar un APK temprano específicamente para encontrar esta clase de diferencia antes de construir más encima. Confirmar en el proyecto un dato técnico que alguien da como "causa probable" (en vez de asumirlo) es barato y evita que una hipótesis no verificada quede registrada como si fuera un hecho comprobado.
+
+**Commit(s):** — (sin commitear; Cami revisa y commitea).
+
+---
+
+## [12] 2026-09-23 — Menú y flujo de pantallas + causa real del punch-hole
+
+**Objetivo:** `docs/prompts/menu-flow.md`. El juego deja de arrancar directo en el tablero y pasa a tener el flujo del GDD §4.3 recortado a local: Menú → Partida → Resultado → (Revancha | Menú). También resuelve el issue conocido de [11].
+
+**Pedido / prompt:** máquina de estados de flujo en Game (Menu, Playing, Result) sin lógica de pantalla en `GameManager`; menú con "Jugar local" preparado para dos botones más; pantalla de resultado con motivo y botones "Revancha"/"Menú" que reemplaza al banner; revancha alternando quién empieza; todo vertical, safe area, layout groups, sin posiciones fijas; Core sin tocar; builder idempotente; PlayMode test del flujo completo; Simulator en los dos perfiles; HUD verificado fuera del punch-hole en device real.
+
+**Qué hizo la IA:**
+- **Causa real del punch-hole (encontrada mientras se armaba el plan):** `UnityEngine.UI.SafeArea` no tiene `Reset()` ni valor inicial para `m_Edges`. Si se lo agrega por código queda en `0` = ningún borde respetado, y el componente no hace nada. La escena anterior tenía `m_Edges: 0` (leído, no editado). Fix: el builder setea `Edges = Top | Right | Bottom | Left` en un único helper, `CreateSafeAreaScreen`, que usan las tres pantallas. `renderOutsideSafeArea` queda en `true`.
+- Game: `FlowState.cs` (enum con valores explícitos, porque se serializa en la escena), `MatchFlow.cs` (tabla de transiciones permitidas + métodos de intención `PlayLocal`, `Rematch`, `BackToMenu`, `ExitMatch`; pasa a `Playing` **antes** de arrancar la partida, porque con controllers autónomos la partida puede terminar dentro de `StartNewGame`). `GameManager`: no arranca solo, `StartNewGame(Occupant startingPlayer)`, `DiscardMatch()` nuevo, `OnCellClicked` ignora en silencio si no hay partida en curso.
+- UI: `FlowScreenVisibility` (CanvasGroup, no `SetActive`, así `BoardView`/`GameHud` hacen `Awake` y se suscriben al cargar la escena sea cual sea la pantalla visible), `MenuScreen`, `ResultScreen` (absorbe el mensaje de fin que estaba en `GameHud`), `ExitMatchButton`. `GameHud` quedó solo con turno/contadores/aviso. `BoardView.OnCellClicked` tiene guarda contra `CurrentState == null` o partida terminada. Se borró `RestartButton.cs` (vía MCP).
+- Builder: `GameScreen` (tablero centrado sin el offset fijo (0,60) + HUD con `TopBar`/"Salir"), `ResultScreen` (panel anclado abajo, así la línea ganadora sigue visible), `MenuScreen` (título + `MenuButtons`, donde van a ir "Crear sala"/"Unirse"), `MatchFlow`. Se borró `CreateWinBanner`.
+- Tests PlayMode adaptados (ahora todo arranca tocando "Jugar local"). Test nuevo `Flow_MenuPlayRematchMenuExit_...`: toque perdido en Menu sin haber jugado (sin excepciones, `CurrentState` null) → jugar (X) → gana X → revancha (O) → gana O → Menú → jugar (X) → dos jugadas → "Salir" (Menu, partida descartada, sin excepciones) → jugar (X, tablero vacío). El test de los dos `FakeAutoPlayer` ahora también verifica que el flujo termina en `Result` aunque la partida termine sincrónicamente.
+- GDD v0.5: §3.1 regla de quién empieza desde el menú; §4.3 flujo completo con MVP / posterior y la decisión de "Crear sala" sin configuración.
+
+**Revisión humana:**
+- Primer ajuste al plan: (1) la jerarquía del plan parecía listar pantallas dos veces. Era la notación ("ResultScreen … + ResultScreen" = GameObject + componente del mismo nombre), no el builder; se reescribió como `GameObject [componentes]` y se sumó a la verificación contar objetos después de dos corridas. (2) Que la partida desde el menú arranque con X pasó al GDD §3.1 como regla, con fila de versión. (3) Definir qué hace cada lector de `CurrentState` mientras es null en Menu, con guardas, y verificarlo en el test.
+- Pidió actualizar el GDD §4.3 con el flujo completo (sala de espera, ingreso de código) marcando MVP / posterior, solo como documentación, y diseñar `FlowState`/`MatchFlow` para que sumar estados de sala sea agregar casos.
+- Segundo ajuste: transición `Playing → Menu` con un botón "Salir" discreto arriba, que descarta la partida; caso agregado al test.
+
+**Pendientes de diseño anotados:**
+- Cada pantalla futura (sala de espera, ingreso de código) tiene que definir explícitamente a dónde vuelve su botón de cancelar/volver. Es una fila de la tabla `AllowedTransitions` de `MatchFlow`, no un "back" genérico.
+- En online, `Playing → Menu` ("Salir") va a ser "abandonar", que cuenta como derrota. Hoy en local solo descarta la partida.
+
+**Verificación:**
+- Compila sin errores ni warnings.
+- EditMode 33/33.
+- PlayMode 4/4. El job de MCP dio timeout de inicialización, pero la corrida sí se ejecutó: resultados leídos de `TestResults.xml`, con timestamp de esa corrida.
+- Builder corrido 2 veces: `GameScreen`, `ResultScreen`, `MenuScreen`, `MatchFlow`, `GameManager` aparecen una vez cada uno, y las tres `SafeArea` quedan con `Edges = Top, Right, Bottom, Left`.
+- Play Mode en la Game view (sin recorte): HUD arriba con "Salir" a la derecha, tablero centrado, panel de resultado abajo sin superponerse con el tablero.
+- Simulator (Cami): el juego ya no queda tapado por el recorte de la cámara.
+- Device real (Cami, APK en Samsung Galaxy S21 FE): el HUD queda fuera del punch-hole y se ve todo bien. Probado en un solo modelo.
+
+**Aprendizajes:**
+- Un componente agregado por código no recibe los defaults que le da el Inspector (`Reset()`); si el tipo no inicializa sus campos, quedan en cero. Después de agregar un componente de Unity por código, revisar sus campos serializados en la escena generada.
+- El diagnóstico de [11] se registró como "causa probable" sin medir; la medición que lo habría detectado (rect de la pantalla contra `Screen.safeArea` en Y, no solo en X) ahora es parte de la verificación de UI.
+
+**Commit(s):** — (sin commitear; Cami revisa y commitea).
+
+---
+
 ## [0] 2026-09-22 — Definición del MVP y setup de documentación
 
 **Objetivo:** revisar el GDD v0.1, cerrar las decisiones pendientes y preparar el repo para el trabajo con agentes.
