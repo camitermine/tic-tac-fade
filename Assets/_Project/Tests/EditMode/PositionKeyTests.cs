@@ -21,6 +21,21 @@ namespace TicTacFade.Core.Tests
         }
 
         [Test]
+        public void Value_SamePosition_IsEqualAndDifferentPosition_IsDifferent()
+        {
+            // Value is what travels over the network for the online desync
+            // check: it must follow key equality exactly.
+            var same1 = PositionKey.Compute(Mvp, new List<int> { 0, 1, 2 }, new List<int> { 3, 4 }, Occupant.O);
+            var same2 = PositionKey.Compute(Mvp, new List<int> { 0, 1, 2 }, new List<int> { 3, 4 }, Occupant.O);
+            var reordered = PositionKey.Compute(Mvp, new List<int> { 1, 0, 2 }, new List<int> { 3, 4 }, Occupant.O);
+            var otherTurn = PositionKey.Compute(Mvp, new List<int> { 0, 1, 2 }, new List<int> { 3, 4 }, Occupant.X);
+
+            Assert.AreEqual(same1.Value, same2.Value);
+            Assert.AreNotEqual(same1.Value, reordered.Value, "Queue order must change the value (GDD §3.4).");
+            Assert.AreNotEqual(same1.Value, otherTurn.Value, "The next player must change the value.");
+        }
+
+        [Test]
         public void Compute_SameCellsDifferentQueueOrder_ReturnsDifferentKey()
         {
             var queueXOldestFirst = new List<int> { 0, 1, 2 };

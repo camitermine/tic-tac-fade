@@ -6,7 +6,9 @@ using TicTacFade.Core;
 namespace TicTacFade.Game
 {
     /// <summary>
-    /// Orchestrates a local match (two human players on the same device).
+    /// Orchestrates a match between two <see cref="IPlayerController"/>s.
+    /// Doesn't know whether they are local, remote or online: an online match
+    /// only differs in which controllers are plugged in (see OnlineMatch).
     /// Doesn't know about any UI type: it exposes state and events, the UI
     /// subscribes (CLAUDE.md, architecture rule 2: UI → Game → Core, never
     /// the other way around).
@@ -20,26 +22,59 @@ namespace TicTacFade.Game
         public event Action<GameState> StateChanged;
         public event Action<GameEndedEvent> GameEnded;
 
+        /// <summary>
+        /// <see cref="CanAcceptLocalInput"/> may have changed without a state
+        /// change (e.g. an online move is waiting for the host).
+        /// </summary>
+        public event Action LocalInputAvailabilityChanged;
+
         IPlayerController _playerX;
         IPlayerController _playerO;
         bool _isAdvancingTurns;
 
         /// <summary>
-        /// Wires the two player controllers. Public so tests (and, later,
-        /// online/AI setup flows) can inject non-human controllers.
+        /// Whether a board tap on this device can play right now: a match in
+        /// progress and the current side's controller taking input.
+        /// </summary>
+        public bool CanAcceptLocalInput =>
+            CurrentState != null && !CurrentState.IsOver && CurrentPlayerController.AcceptsLocalInput;
+
+        /// <summary>Whether a human on this device controls that side.</summary>
+        public bool IsLocalHuman(Occupant player) => ControllerFor(player).IsLocalHuman;
+
+        /// <summary>
+        /// Wires the two player controllers. Public so tests and the
+        /// online/AI setup flows can inject other controllers.
         /// Re-callable: unsubscribes the previous pair before subscribing
         /// the new one.
         /// </summary>
         public void Initialize(IPlayerController playerX, IPlayerController playerO)
         {
-            if (_playerX != null) _playerX.MoveChosen -= OnMoveChosen;
-            if (_playerO != null) _playerO.MoveChosen -= OnMoveChosen;
+            Unsubscribe(_playerX);
+            Unsubscribe(_playerO);
 
             _playerX = playerX;
             _playerO = playerO;
-            _playerX.MoveChosen += OnMoveChosen;
-            _playerO.MoveChosen += OnMoveChosen;
+            Subscribe(_playerX);
+            Subscribe(_playerO);
+
+            LocalInputAvailabilityChanged?.Invoke();
         }
+
+        void Subscribe(IPlayerController controller)
+        {
+            controller.MoveChosen += OnMoveChosen;
+            controller.AcceptsLocalInputChanged += OnAcceptsLocalInputChanged;
+        }
+
+        void Unsubscribe(IPlayerController controller)
+        {
+            if (controller == null) return;
+            controller.MoveChosen -= OnMoveChosen;
+            controller.AcceptsLocalInputChanged -= OnAcceptsLocalInputChanged;
+        }
+
+        void OnAcceptsLocalInputChanged() => LocalInputAvailabilityChanged?.Invoke();
 
         void Awake()
         {
@@ -71,18 +106,20 @@ namespace TicTacFade.Game
         }
 
         /// <summary>
-        /// Ignored silently while there is no match in progress
-        /// (<see cref="CurrentState"/> null in the menu, or a finished match):
-        /// a stray tap is not a game error.
+        /// Ignored silently when no local input is possible (menu with no
+        /// match, a finished match, the opponent's turn online, or an online
+        /// move still waiting for the host): a stray tap is not a game error.
         /// </summary>
         public void OnCellClicked(int cellIndex)
         {
-            if (CurrentState == null || CurrentState.IsOver)
+            if (!CanAcceptLocalInput)
                 return;
             CurrentPlayerController.NotifyCellSelected(cellIndex);
         }
 
-        IPlayerController CurrentPlayerController => CurrentState.CurrentPlayer == Occupant.X ? _playerX : _playerO;
+        IPlayerController CurrentPlayerController => ControllerFor(CurrentState.CurrentPlayer);
+
+        IPlayerController ControllerFor(Occupant player) => player == Occupant.X ? _playerX : _playerO;
 
         void OnMoveChosen(Move move)
         {

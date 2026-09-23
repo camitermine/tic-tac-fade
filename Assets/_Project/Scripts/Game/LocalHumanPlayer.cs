@@ -10,7 +10,13 @@ namespace TicTacFade.Game
     public class LocalHumanPlayer : IPlayerController
     {
         public Occupant Player { get; }
+        public bool IsLocalHuman => true;
+        public bool AcceptsLocalInput => true; // local moves apply at once: nothing to wait for
+
         public event Action<Move> MoveChosen;
+
+        // Never raised: AcceptsLocalInput is constant.
+        public event Action AcceptsLocalInputChanged { add { } remove { } }
 
         public LocalHumanPlayer(Occupant player) => Player = player;
 

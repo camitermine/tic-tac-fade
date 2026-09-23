@@ -59,6 +59,25 @@ Se mantiene la decisión. Cómo quedó implementada y en qué se precisa lo de a
   - Si el servicio igual devuelve un error de formato, se reconoce por el mensaje (única señal que deja el SDK) y también da "Código inválido".
   - Cualquier otro rechazo al unirse (p. ej. sala llena) da un mensaje genérico: "No se pudo unir a la sala. Revisá el código o pedí uno nuevo.".
 
+## Implementación (actualizado 2026-09-23, online iteración 2: partida jugable)
+
+### Transporte de jugadas: mensajes con nombre de Netcode, no RPCs
+
+- **Decisión:** `NgoMatchTransport` (en `TicTacFade.Net`) usa `CustomMessagingManager` con un solo mensaje con nombre (`TicTacFade.Match`), identificado por un byte de tipo. Se descartaron los RPCs porque necesitan un `NetworkObject`: spawnearlo con un prefab registrado, o ponerlo en la escena. La escena la genera el builder por código, y un `NetworkObject` en escena necesita un `GlobalObjectIdHash` que el editor calcula al validarlo; generarlo por script es frágil y un error ahí rompe la conexión en silencio. Los mensajes con nombre viajan directo sobre el `NetworkManager`, sin objetos ni prefabs.
+- **Entrega:** todos los mensajes van con `NetworkDelivery.ReliableSequenced`, explícito en el código (constante `Delivery`) aunque sea el default del método. Una jugada confirmada perdida o desordenada no puede quedar librada a que la detecte la comparación de hash.
+- **Interfaz:** `IMatchTransport` (en Game), con una base serializable `MatchTransportBehaviour` para la escena, igual que `ISessionService`. Los tests usan un transporte en memoria con cola y bombeo explícito.
+- **Mensajes:** `StartMatch`, `Propose`, `Confirmed` (jugada, número de jugada, `PositionKey.Value` después de aplicarla), `Rejected`, `Ack` (número de jugada y clave del cliente), `RematchRequest`, `Desync`. Viajan jugadas, nunca el tablero.
+- **Buffer de entrada:** lo que llega antes de que el flujo del dispositivo abra el canal (`Open`) se guarda y se entrega al abrir. Cubre el caso de un `StartMatch` que el host manda apenas conecta el cliente, antes de que el join haya terminado del lado del cliente.
+
+### Autoridad y sincronización
+
+- **El host es la autoridad** (`OnlineMatch`, en Game). Toda propuesta, sea un toque en el host o un mensaje del cliente, pasa por la misma validación: `RulesEngine.IsLegal` más "cada dispositivo solo mueve su símbolo". Una propuesta ilegal se rechaza y ningún estado cambia.
+- **En ambos dispositivos `GameManager` solo recibe jugadas confirmadas**, a través del controller de cada lado: `OnlineLocalPlayer` (el humano de este dispositivo, que propone y espera) o `RemotePlayer`. `GameManager` no sabe que hay red.
+- **Comparación de hash:** el host manda su `PositionKey.Value` con cada confirmación. El cliente aplica, compara y devuelve un `Ack` con su clave, y el host también compara. Ante cualquier diferencia: `Debug.LogError`, `Desync` al otro lado, se cierra la sesión y ambos vuelven al menú. Nunca se sigue jugando desincronizados.
+- **Arranque:** lo dispara la conexión de Netcode (`OnClientConnectedCallback` en el host), no el join de lobby, porque antes de eso no se pueden mandar mensajes.
+- **Símbolos:** el host es siempre X y el cliente siempre O (GDD §3.1). La revancha requiere el pedido de los dos; el host la anuncia con `StartMatch` invirtiendo quién empieza.
+- **Pendiente (iteración 3):** si una propuesta del cliente no recibe `Confirmed` ni `Rejected` (host caído), `OnlineLocalPlayer` queda esperando con el input bloqueado. Se resuelve junto con desconexiones y timer.
+
 ## Referencias
 
 - https://docs.unity.com/ugs/en-us/manual/mps-sdk/manual/join-session

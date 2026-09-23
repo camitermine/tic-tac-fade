@@ -502,6 +502,77 @@ El objetivo es que quede visible **qué se le pidió a la IA, qué produjo y qu�
 
 ---
 
+## [14] 2026-09-23 — Online iteración 2: partida jugable entre dos dispositivos
+
+**Objetivo:** `docs/prompts/online-2-moves.md`. Cuando el rival se conecta a la sala, la partida arranca sola en los dos dispositivos y se juega completa por red hasta el resultado, con revancha. Timer, desconexiones en medio de partida y abandono quedan para la iteración 3.
+
+**Pedido / prompt:**
+- Modelo host-autoritativo: el cliente nunca aplica su propia jugada; el host valida con `RulesEngine.IsLegal` y difunde; en los dos dispositivos `GameManager` solo recibe jugadas confirmadas, a través de un `RemotePlayer` que es un `IPlayerController` más.
+- Comparación de hash de posición después de cada jugada; si difiere, se corta la partida.
+- Host siempre X y cliente siempre O; la revancha alterna quién empieza.
+- Elegir entre RPCs y mensajes con nombre, y justificarlo.
+- Tablero solo con input en tu turno y sin doble envío; HUD "Tu turno" / "Turno del rival".
+- Revancha con pedido de ambos; "Menú" y "Salir" cierran la sesión y el otro ve "El rival salió".
+- Test con dos `GameManager` y un transporte en memoria.
+
+**Qué hizo la IA:**
+- **Plan con decisiones a aprobar:** exponer `PositionKey.Value` (Core) e incorporar tres miembros nuevos a `IPlayerController`. Cami aprobó con ajustes (ver Revisión humana).
+- **Transporte:** mensajes con nombre (`CustomMessagingManager`), no RPCs: no necesitan `NetworkObject`, prefab ni spawn, y un `NetworkObject` en una escena generada por código es frágil (`GlobalObjectIdHash`). Un solo mensaje con byte de tipo; todos con `NetworkDelivery.ReliableSequenced` explícito. Justificado en el ADR 0002. Se verificaron en el código de NGO 2.13.3 las firmas de `RegisterNamedMessageHandler`, `SendNamedMessage` y los eventos de conexión antes de usarlas.
+- **Core:** `PositionKey.Value` público (sin cambios de reglas) y un test EditMode que verifica que el valor sigue exactamente la igualdad de claves.
+- **Game:**
+  - `IPlayerController` suma `IsLocalHuman`, `AcceptsLocalInput` y `AcceptsLocalInputChanged`. `LocalHumanPlayer` queda igual en comportamiento.
+  - Nuevos `OnlineLocalPlayer` (un toque propone y bloquea el input hasta la confirmación o el rechazo) y `RemotePlayer`, ambos con `IConfirmedMoveReceiver`.
+  - `GameManager` expone `CanAcceptLocalInput`, `IsLocalHuman(Occupant)` y `LocalInputAvailabilityChanged`, y `OnCellClicked` usa esa guarda. Su lógica de partida no cambió y no sabe que hay red.
+  - Nuevos `MatchMessage`, `IMatchTransport` + `MatchTransportBehaviour` (con buffer de entrada hasta `Open`) y `OnlineMatch` (autoridad, confirmaciones, `Ack` con clave, desync, revancha de a dos).
+  - `MatchFlow`: fila `Lobby → Playing`; abre el `OnlineMatch` al entrar a la sala; revancha, "Menú" y "Salir" online; "El rival salió" y "Se perdió la sincronización" como `SessionFailure` nuevos. Al salir de online restaura los dos `LocalHumanPlayer`.
+- **Net:** `NgoMatchTransport` registra el handler al arrancar la red (antes de que el cliente termine de conectar) y dispara `PeerConnected` con `OnClientConnectedCallback`.
+- **UI:**
+  - `BoardView`: sin input fuera de turno ni mientras hay una jugada pendiente.
+  - `GameHud`: "Tu turno" / "Turno del rival" cuando hay un solo humano en el dispositivo; en local sigue "Turno: Jugador X".
+  - `ResultScreen`: "Esperando al rival..." tras pedir revancha.
+- **Builder:** `MatchTransport` conectado al `NetworkManager` y a `MatchFlow`; línea `RematchStatus` en el panel de resultado. Idempotente: una instancia de cada objeto tras dos corridas.
+- **Tests nuevos:**
+  - `OnlineMatchTests` (dos `GameManager` sin escena, transporte en memoria con cola y bombeo explícito):
+    - partida completa con estados idénticos al final (celdas, colas, turno, jugadas, resultado y hash);
+    - cuatro propuestas ilegales del cliente (celda ocupada, símbolo del host, fuera de rango, fuera de turno) rechazadas sin cambiar ningún estado;
+    - `StartMatch` que llega antes de que el cliente esté listo, procesado desde el buffer (pedido de Cami);
+    - doble toque durante la espera manda una sola propuesta;
+    - revancha que necesita los dos pedidos y arranca O;
+    - hash distinto que corta en ambos lados.
+  - `OnlineMatchFlowTests` (escena real contra un dispositivo simulado):
+    - host completo por pantallas: HUD, input bloqueado en el turno del rival, victoria, revancha con espera, "El rival salió" y después "Jugar local" normal;
+    - cliente con arranque bufferizado y el host cerrando la sala;
+    - "Menú" desde el resultado;
+    - "Salir" en partida;
+    - desync por `Ack` con clave distinta.
+
+**Revisión humana:**
+- Cami aprobó el plan con ajustes:
+  - `IsLocal` pasa a `IsLocalHuman`: cuando exista la IA correrá en el dispositivo sin ser humana, y el HUD depende de si hay un humano controlando ese lado.
+  - `ReliableSequenced` explícito en código y documentado en el ADR.
+  - Test del `StartMatch` que llega antes de que el flujo del cliente esté listo.
+  - Anotar el pendiente del cliente bloqueado sin respuesta del host.
+
+**Verificación:**
+- Compila sin errores.
+- EditMode 34/34 (33 + el test de `PositionKey.Value`).
+- PlayMode 45/45 vía MCP (34 + 6 de `OnlineMatchTests` + 5 de `OnlineMatchFlowTests`), incluido el modo local sin cambios.
+- Builder corrido 2 veces sin duplicados.
+- Los errores y warnings que quedan en consola después de la suite los generan los tests a propósito (rechazos, desync forzado, código `AB12CD`).
+- **Pendiente (Cami), con dos dispositivos reales:** partida completa hasta ganar, revancha (arranca O), empate por repetición si se puede forzar, y "Menú" desde el resultado en uno de los dos.
+
+**Pendientes para la iteración 3:**
+- **Cliente bloqueado sin respuesta del host:** si una propuesta del cliente nunca recibe `Confirmed` ni `Rejected` (host caído), `OnlineLocalPlayer` queda pendiente para siempre con el input bloqueado. Necesita timeout o recuperación junto con el manejo de desconexiones.
+- "Salir" y "Menú" durante una partida online cuentan como derrota (hoy solo cierran la sesión).
+- Timer de turno con modo ausente (GDD §3.5).
+
+**Aprendizajes:**
+- Separar la autoridad (`OnlineMatch`) del transporte (`IMatchTransport`) permitió testear el modelo completo, incluidos desync y buffer, sin red ni escena. Un transporte en memoria que entrega recién en `Pump` reproduce la asincronía real; uno que entregara al instante habría escondido el caso del `StartMatch` que llega temprano.
+
+**Commit(s):** — (sin commitear; Cami revisa y commitea).
+
+---
+
 ## [0] 2026-09-22 — Definición del MVP y setup de documentación
 
 **Objetivo:** revisar el GDD v0.1, cerrar las decisiones pendientes y preparar el repo para el trabajo con agentes.

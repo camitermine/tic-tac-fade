@@ -27,21 +27,24 @@ namespace TicTacFade.UI
             }
 
             gameManager.StateChanged += OnStateChanged;
+            gameManager.LocalInputAvailabilityChanged += OnLocalInputAvailabilityChanged;
         }
 
         void OnDestroy()
         {
-            if (gameManager != null)
-                gameManager.StateChanged -= OnStateChanged;
+            if (gameManager == null) return;
+            gameManager.StateChanged -= OnStateChanged;
+            gameManager.LocalInputAvailabilityChanged -= OnLocalInputAvailabilityChanged;
         }
 
         void OnCellClicked(int index)
         {
-            // No match in progress (menu before the first match, after
-            // leaving one, or a finished match): no selection, no preview.
-            var state = gameManager.CurrentState;
-            if (state == null || state.IsOver)
+            // No local input right now (no match, a finished match, the
+            // opponent's turn online, or an online move waiting for the
+            // host): no selection, no preview.
+            if (!gameManager.CanAcceptLocalInput)
                 return;
+            var state = gameManager.CurrentState;
 
             if (selectedCell.HasValue && selectedCell.Value == index)
             {
@@ -82,12 +85,33 @@ namespace TicTacFade.UI
             ClearGhostPreview();
             selectedCell = null;
 
-            Render(state, !state.IsOver);
+            Render(state, gameManager.CanAcceptLocalInput);
 
             if (state.IsOver && state.Winner != Occupant.None)
                 HighlightLine(state.WinningLine);
             else
                 ClearHighlights();
+        }
+
+        // Input can open or close without a state change (an online move sent
+        // to the host and not confirmed yet): update the empty cells only.
+        void OnLocalInputAvailabilityChanged()
+        {
+            var state = gameManager.CurrentState;
+            if (state == null) return;
+
+            bool canPlay = gameManager.CanAcceptLocalInput;
+            if (!canPlay)
+            {
+                ClearGhostPreview();
+                selectedCell = null;
+            }
+
+            for (int i = 0; i < cells.Length; i++)
+            {
+                if (state.Cells[i] == Occupant.None)
+                    cells[i].SetInteractable(canPlay);
+            }
         }
 
         void Render(GameState state, bool interactableWhenEmpty)

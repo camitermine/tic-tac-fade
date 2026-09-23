@@ -16,6 +16,7 @@
 | 0.3 | Sept 2026 | Lenguaje visual final del indicador de vida 1 (badge opaco teñido por dueño) y del ghost piece (marca de opacidad mínima sobre la ficha propia que el FIFO eliminaría, distinta de la marca crítica pasiva). |
 | 0.4 | Sept 2026 | Dirección visual del pase de arte (§6): neón sobre fondo oscuro, X cian/O magenta, formas blancas tintadas por código con glow por Bloom de URP, disolución por shader + partículas. Restricción técnica: Bloom requiere Canvas en Screen Space - Camera, no Overlay. |
 | 0.5 | Sept 2026 | Regla explícita de quién empieza una partida iniciada desde el menú (§3.1). Flujo de pantallas completo con alcance MVP / posterior y decisión de "Crear sala" sin pantalla de configuración (§4.3). |
+| 0.6 | Sept 2026 | Online: host siempre X y cliente siempre O, revancha alterna quién empieza (§3.1). Jugadas confirmadas por el host, corte de partida ante hash distinto, revancha con pedido de ambos y "El rival salió" (§5). |
 
 ---
 
@@ -50,6 +51,7 @@
 - **Turno:** alternado, una acción por turno: colocar una ficha en una casilla libre.
 - **Quién empieza:** en la primera partida, el host (X). En cada revancha se alterna quién empieza.
   - **Partida desde el menú (v0.5):** una partida iniciada desde el menú principal es una primera partida: empieza X. La alternancia solo aplica a revanchas consecutivas; volver al menú (desde el resultado o saliendo de una partida en curso) la reinicia.
+  - **Online (v0.6):** el host es siempre X y el cliente siempre O. La primera partida de la sala arranca X; cada revancha alterna quién empieza, sin cambiar los símbolos.
 
 ### 3.2 Lógica FIFO
 
@@ -151,7 +153,10 @@ Menú principal
 
 - **Tecnología:** Unity Multiplayer Services (Sessions), con Relay y códigos de sala. Ver `docs/adr/0002-online-multiplayer-services.md`.
 - **Modelo:** host-cliente, 2 jugadores por sala. El host es autoritativo: valida las jugadas y lleva el timer.
-- **Sincronización:** se transmiten **jugadas** (`Move`), no el tablero completo. Ambos clientes aplican las mismas reglas del Core y pueden comparar un hash del estado para detectar desincronizaciones.
+- **Sincronización:** se transmiten **jugadas** (`Move`), no el tablero completo. Ambos clientes aplican las mismas reglas del Core.
+  - **(v0.6)** Cada jugada, también las del host, la valida el host antes de aplicarse. Los dos dispositivos aplican solo jugadas confirmadas por el host, en el mismo orden. Una jugada ilegal se rechaza y no cambia nada.
+  - **(v0.6)** Después de cada jugada ambos comparan el hash de posición. Si no coinciden, la partida se corta y los dos vuelven al menú con el mensaje "Se perdió la sincronización con el rival". Nunca se sigue jugando desincronizados.
+- **Resultado online (v0.6):** la revancha requiere que la pidan los dos; quien la pidió ve "Esperando al rival...". Si uno elige "Menú" (o "Salir" durante la partida), la sesión se cierra y el otro vuelve al menú con "El rival salió". Que salir cuente como derrota es de la iteración 3.
 - **Desconexiones:**
   - Si el **cliente** se desconecta, la partida sigue y su timer corre (3.5). La reconexión es *best effort* en el MVP.
   - Si el **host** se desconecta, la partida termina y el cliente vuelve al menú con un mensaje.

@@ -12,7 +12,10 @@ namespace TicTacFade.PlayModeTests
     public class FakeAutoPlayer : IPlayerController
     {
         public Occupant Player { get; }
+        public bool IsLocalHuman => false;
+        public bool AcceptsLocalInput => false;
         public event Action<Move> MoveChosen;
+        public event Action AcceptsLocalInputChanged { add { } remove { } }
 
         public FakeAutoPlayer(Occupant player) => Player = player;
 
