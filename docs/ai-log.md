@@ -253,6 +253,56 @@ El objetivo es que quede visible **qué se le pidió a la IA, qué produjo y qu�
 
 ---
 
+## [9] 2026-09-23 — Dirección visual en el GDD + sprites fuente sin cablear
+
+**Objetivo:** dejar registrada en el GDD la dirección visual decidida para el pase de arte, y anotar que los sprites fuente ya están en el repo pero todavía no están conectados a ningún componente.
+
+**Pedido / prompt:** Cami pidió agregar al "GDD §5" la dirección visual (neón sobre fondo oscuro, X cian/O magenta, formas blancas tintadas por código, glow por Bloom de URP nunca horneado en el sprite, desintegración por shader de disolución + partículas), la restricción técnica de que Bloom no afecta a un Canvas Screen Space - Overlay, y una fila nueva en el historial de versiones. También pidió anotar en el ai-log que los sprites fuente (`piece_x`, `piece_o`, `shard`, `cell_frame`, `badge`) están en el repo como material para el pase de arte pero `CellView` sigue con los labels de texto hasta esa iteración.
+
+**Qué hizo la IA:**
+- Detectó un desajuste antes de escribir: el §5 actual del GDD es "Online (MVP)" (networking), no dirección visual — ese contenido corresponde a §6 "Diseño audiovisual (post-MVP)", que ya tenía una entrada abierta ("Arte: minimalista de alto contraste. Candidatos: neón cyberpunk o flat vector") esperando justamente esta decisión. Lo señaló y lo puso en §6 en vez de asumir en silencio o escribirlo en el lugar equivocado.
+- Actualizó `docs/GDD.md` §6: reemplazó los "candidatos" de arte por la dirección decidida (neón, cian/magenta, formas blancas tintadas por código, Bloom de URP), agregó la restricción técnica del Canvas (Screen Space - Overlay actual no recibe Bloom; el pase de arte va a necesitar pasar a Screen Space - Camera, cambio de arquitectura de UI, no cosmético) y precisó la desintegración como shader de disolución + partículas (antes solo decía "partículas"). v0.3 → v0.4, fila nueva en el historial.
+- Verificó que los 5 sprites fuente mencionados realmente están en el repo antes de anotarlo (no tomó la palabra de Cami sin chequear): `Assets/_Project/Art/Source/{piece_x,piece_o,shard,cell_frame,badge}.svg` + sus export `@2x.png`, los 5 presentes.
+- Confirmó que `CellView.cs` sigue sin cablear ningún sprite — sigue usando `label.text = "X"/"O"` sobre un `Image` de color plano (`XColor`/`OColor`), sin ninguna referencia a los sprites de `Art/Source/`. El cableado queda para una iteración futura de arte, que además requiere el cambio de Canvas a Screen Space - Camera documentado arriba.
+
+**Revisión humana:** pendiente (a validar por Cami) — en particular, confirmar que §6 era el lugar correcto (no §5 como se pidió textualmente).
+
+**Verificación:** lectura directa del GDD post-edición; listado de archivos en `Assets/_Project/Art/Source/` confirmando los 5 sprites; lectura de `CellView.cs` confirmando que no referencia ningún sprite todavía.
+
+**Aprendizajes:** cuando un pedido especifica un número de sección que no coincide con el contenido real del documento, conviene señalar el desajuste y ubicar el contenido donde semánticamente corresponde, en vez de crear una sección nueva o forzarlo en el lugar pedido — el GDD ya tenía un "candidato" abierto en §6 esperando exactamente esta decisión.
+
+**Commit(s):** — (sin commitear; Cami revisa y commitea).
+
+---
+
+## [10] 2026-09-23 — IPlayerController + GameConfig como ScriptableObject
+
+**Objetivo:** `docs/prompts/player-controllers.md` — implementar dos reglas de arquitectura ya declaradas pero no construidas: CLAUDE.md regla 5 ("Players are interchangeable through IPlayerController...") y ADR 0001 ("La capa Game expone GameConfig como ScriptableObject"). `GameManager` deja de asumir que toda jugada viene de la UI y de llamar `GameConfig.Mvp()` hardcodeado.
+
+**Pedido / prompt:** crear `IPlayerController` + `LocalHumanPlayer`, que `GameManager` reciba dos controllers sin ramificar por tipo; `GameConfig` como ScriptableObject (wrapper, Core sin tocar); scene builder crea/wirea la config nueva, idempotente; UI se adapta sin cambios visuales; tests EditMode/PlayMode existentes siguen pasando + partida local igual que antes + test nuevo con un controller no-humano; ai-log y ADR si corresponde.
+
+**Qué hizo la IA:**
+- Confirmó antes de escribir código que no hacía falta tocar Core: todo lo necesario ya era público (`Occupant`, `Move`, `GameState.GetFreeCellIndices()`).
+- Creó `IPlayerController.cs` (`Player`, evento `MoveChosen`, `NotifyTurnStarted`, `NotifyCellSelected`), `LocalHumanPlayer.cs` (espera pasivamente el toque) y `GameConfigAsset.cs` (wrapper ScriptableObject de `GameConfig`, nombre distinto a propósito para no repetir la ambigüedad de nombres que ya pasó una vez con `SafeArea`).
+- Reescribió `GameManager.cs`: `Initialize(IPlayerController, IPlayerController)` público y re-llamable, controllers por default (`LocalHumanPlayer` x2) creados en `Awake()` si nadie inyectó otros antes — no se pueden wirear desde el scene builder porque un campo de interfaz con `event` no sobrevive la serialización de Unity. `OnCellClicked`, `StartNewGame`, `CurrentState`, `StateChanged`, `GameEnded` mantienen exactamente la misma firma pública.
+- **Confirmó y verificó que la UI no necesitaba ningún cambio**: `BoardView.cs`, `GameHud.cs`, `RestartButton.cs` quedaron intactos — cero líneas tocadas, todos siguen llamando a la misma API de `GameManager` que ya usaban.
+- `TicTacFadeSceneBuilder.cs`: `GetOrCreateGameConfigAsset()` (busca en `Assets/_Project/Config/GameConfig.asset`, lo crea solo si falta) + wiring del campo `config` de `GameManager`. Verificado idempotente corriendo el builder 2 veces: el asset no se duplica.
+- **Corrección de diseño encontrada por Cami en la revisión del plan, antes de escribir código:** el primer diseño notificaba el turno siguiente con una llamada recursiva desde dentro del manejo de la jugada anterior. Con dos controllers autónomos (el test pedido), eso apila un stack frame por jugada de toda la partida, y una jugada rechazada que no corta el ciclo produce recursión infinita → StackOverflow → cuelga el Editor sin excepción capturable. Se corrigió con un flag de re-entrada (`_isAdvancingTurns`) + bucle en un solo método (`AdvanceTurns`): una llamada anidada no abre un bucle nuevo, el de más afuera recoge el cambio de estado en su próxima iteración. `ApplyMove` corta en seco ante un `MoveRejectedEvent` (loguea y sale, no vuelve a notificar).
+- Creó `FakeAutoPlayer.cs` (solo test, `Assets/_Project/Tests/PlayMode/`): controller no-humano que juega la primera celda libre apenas se le notifica su turno.
+- Extendió `SceneWiringAndInputTests.cs`: sumó `GameManager` al chequeo de referencias serializadas sin asignar (protege el campo `config` nuevo). Agregó `GameManager_TwoFakeAutoPlayers_PlayFullMatchToCompletion` — dos `FakeAutoPlayer` (no un fake + un humano, pedido explícito de Cami en la segunda revisión) juegan una partida completa hasta `IsOver`, con un tope de 60 frames que falla el test si se excede (protección de test independiente, no confía solo en que el flag de re-entrada de producción esté bien) y verifica que terminó en un resultado válido (victoria con línea, o empate por repetición/tope de jugadas).
+- Agregó `docs/adr/0003-player-controller-abstraction.md` — solo para la parte de controllers; la de `GameConfig` como ScriptableObject ya estaba decidida en ADR 0001, no le correspondía una ADR nueva.
+- **Bug de tooling, no de código:** al crear `LocalHumanPlayer.cs`, `GameManager.cs` no podía resolver el tipo (`CS0246`) pese a que `IPlayerController.cs` y `GameConfigAsset.cs` —creados en el mismo lote— compilaban bien, y `validate_script` no encontraba ningún error en el archivo. Ni forzar `refresh_unity` varias veces ni reimportar el asset explícitamente lo resolvió. Se solucionó borrando el archivo (`delete_script`) y recreándolo idéntico — algo quedó mal registrado en el asset database para ese path/GUID específico en el primer intento. `unity_reflect search` (por texto) sigue sin encontrarlo después del fix, pero `unity_reflect get_type` (por nombre completo) sí lo confirma — el índice de búsqueda por texto tiene su propio caché, separado de la compilación real.
+
+**Revisión humana:** Cami aprobó el plan con una corrección de fondo (la recursión/rechazo de arriba) antes de que se escribiera una sola línea, y amplió el test pedido para que fuera dos controllers autónomos jugando una partida entera (no un fake + un humano) con protección explícita contra loops.
+
+**Verificación:** compila sin errores/warnings. `run_tests(EditMode)`: 33/33 Core, sin regresión. Scene builder corrido 2 veces: `GameConfig.asset` se crea una sola vez, no se duplica. `run_tests(PlayMode)`: 3/3 (wiring extendido a `GameManager`, doble-toque, partida completa con dos `FakeAutoPlayer`). Play mode manual con toques reales (`Button.onClick.Invoke()` doble por celda): partida local se juega idéntico a como jugaba antes del refactor.
+
+**Aprendizajes:** un archivo nuevo puede fallar en resolver como tipo con un error de compilador engañoso (`CS0246`, "falta un using") aunque el archivo esté sintácticamente perfecto y sus hermanos creados en el mismo lote compilen bien — vale la pena borrar y recrear el archivo antes de perseguir una causa de código que no existe. Revisar un plan de arquitectura ANTES de escribir código (como hizo Cami acá) es mucho más barato que encontrar un StackOverflow después: la recursión disfrazada de "notificación de turno" no se ve como recursión hasta que se piensa específicamente en el caso de dos controllers autónomos encadenados.
+
+**Commit(s):** — (sin commitear; Cami revisa y commitea).
+
+---
+
 ## [0] 2026-09-22 — Definición del MVP y setup de documentación
 
 **Objetivo:** revisar el GDD v0.1, cerrar las decisiones pendientes y preparar el repo para el trabajo con agentes.

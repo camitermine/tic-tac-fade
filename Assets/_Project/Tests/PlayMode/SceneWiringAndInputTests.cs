@@ -5,6 +5,7 @@ using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.TestTools;
 using UnityEngine.UI;
+using TicTacFade.Core;
 using TicTacFade.Game;
 using TicTacFade.UI;
 
@@ -31,6 +32,7 @@ namespace TicTacFade.PlayModeTests
             Assert.IsNotNull(gameHud, "GameHud not found in scene.");
             Assert.AreEqual(9, cellViews.Length, "Expected 9 CellView instances.");
 
+            AssertNoNullReferenceFields(gameManager);
             AssertNoNullReferenceFields(boardView);
             AssertNoNullReferenceFields(gameHud);
             foreach (var cellView in cellViews)
@@ -60,6 +62,48 @@ namespace TicTacFade.PlayModeTests
             yield return null;
             Assert.AreEqual(movesBeforeFirstTap + 1, gameManager.CurrentState.TotalMoves,
                 "The second tap on the same cell must confirm the move.");
+        }
+
+        [UnityTest]
+        public IEnumerator GameManager_TwoFakeAutoPlayers_PlayFullMatchToCompletion()
+        {
+            yield return SceneManager.LoadSceneAsync(ScenePath, LoadSceneMode.Single);
+
+            GameManager gameManager = null;
+            yield return WaitForGameManagerReady(gm => gameManager = gm);
+
+            // Neither controller is a LocalHumanPlayer: proves GameManager
+            // can run a match end to end without any UI/human involvement,
+            // and never branches on the concrete IPlayerController type.
+            gameManager.Initialize(new FakeAutoPlayer(Occupant.X), new FakeAutoPlayer(Occupant.O));
+            gameManager.StartNewGame();
+
+            // GameManager's turn-advancing loop is synchronous (see its
+            // AdvanceTurns doc comment), so the match should already be over
+            // by the time StartNewGame() returns. The frame cap here is an
+            // independent safety net at the test level, not a trust in that
+            // implementation detail: if a future regression makes turn
+            // advancing asynchronous or reintroduces a stuck loop, this
+            // fails clearly instead of hanging the test runner.
+            const int maxFrames = 60;
+            int frames = 0;
+            while (!gameManager.CurrentState.IsOver && frames < maxFrames)
+            {
+                yield return null;
+                frames++;
+            }
+
+            Assert.IsTrue(gameManager.CurrentState.IsOver,
+                $"Match did not finish within {maxFrames} frames — possible infinite loop between autonomous controllers.");
+
+            var state = gameManager.CurrentState;
+            bool validEnd = state.EndReason == GameEndReason.Win
+                || state.EndReason == GameEndReason.DrawByRepetition
+                || state.EndReason == GameEndReason.DrawByMoveLimit;
+            Assert.IsTrue(validEnd, $"Unexpected end reason: {state.EndReason}");
+
+            if (state.EndReason == GameEndReason.Win)
+                Assert.IsNotEmpty(state.WinningLine, "A win must report a winning line.");
         }
 
         // Start()/StartNewGame() run a frame after the scene loads; a single

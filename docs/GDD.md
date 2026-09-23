@@ -1,6 +1,6 @@
 # GDD: Tic-Tac-Fade
 
-**Versión:** 0.3
+**Versión:** 0.4
 **Estado:** MVP definido — pre-producción
 **Fecha:** Septiembre 2026
 **Fuente de verdad:** este archivo (`docs/GDD.md`). Cualquier espejo externo (Google Docs) es secundario.
@@ -14,6 +14,7 @@
 | 0.1 | Sept 2026 | Primer borrador: core gameplay, lógica FIFO, loop de turnos y roadmap. |
 | 0.2 | Sept 2026 | Migración al repo. Regla de empate (repetición + tope), timer por turno con modo ausente, definición general de "vida", indicadores para ambos jugadores, invariante de jugada legal, alcance del MVP. |
 | 0.3 | Sept 2026 | Lenguaje visual final del indicador de vida 1 (badge opaco teñido por dueño) y del ghost piece (marca de opacidad mínima sobre la ficha propia que el FIFO eliminaría, distinta de la marca crítica pasiva). |
+| 0.4 | Sept 2026 | Dirección visual del pase de arte (§6): neón sobre fondo oscuro, X cian/O magenta, formas blancas tintadas por código con glow por Bloom de URP, disolución por shader + partículas. Restricción técnica: Bloom requiere Canvas en Screen Space - Camera, no Overlay. |
 
 ---
 
@@ -145,8 +146,9 @@ Representación, aplicada a las fichas de **ambos jugadores**:
 
 ## 6. Diseño audiovisual (post-MVP)
 
-- **Arte:** minimalista de alto contraste. Candidatos: neón cyberpunk o flat vector.
-- **Animaciones:** partículas al desvanecerse una ficha y trazo luminoso en la línea ganadora.
+- **Dirección visual (decidida):** neón sobre fondo oscuro. X en cian, O en magenta. Los sprites son formas **blancas**, tintadas por código (mismo patrón que ya usan los placeholders: color de jugador aplicado en runtime, nunca horneado en el sprite). El glow lo resuelve **Bloom de URP** sobre esas formas blancas, no un glow pintado a mano en la textura.
+  - **Restricción técnica:** Bloom no afecta a un Canvas en **Screen Space - Overlay** (el modo actual del Canvas del juego, ver `TicTacFadeSceneBuilder.CreateHud`/`CreateBoardPanel`). El pase de arte va a requerir pasar el Canvas a **Screen Space - Camera** para que el post-processing de la cámara lo alcance. Esto es un cambio de arquitectura de UI, no cosmético — a tener en cuenta cuando se planee esa iteración.
+- **Animaciones:** la ficha se desintegra con un **shader de disolución** (dissolve) más partículas al desvanecerse; trazo luminoso en la línea ganadora.
 - **SFX previstos:** colocar ficha, ficha entrando en vida 1, ficha disolviéndose, victoria, aviso de timer.
 - En el MVP se admiten placeholders.
 
