@@ -1,0 +1,21 @@
+{
+    "name": "TicTacFade.Net",
+    "rootNamespace": "TicTacFade.Net",
+    "references": [
+        "TicTacFade.Core",
+        "TicTacFade.Game",
+        "Unity.Services.Core",
+        "Unity.Services.Authentication",
+        "Unity.Services.Multiplayer",
+        "Unity.Netcode.Runtime"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
