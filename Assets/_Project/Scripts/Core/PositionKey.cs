@@ -37,6 +37,13 @@ namespace TicTacFade.Core
 
         PositionKey(ulong value) => _value = value;
 
+        /// <summary>
+        /// The packed key as a number, so two peers can compare positions
+        /// over the network (online desync check, GDD §5). Equal positions
+        /// always give the same value; different positions never do.
+        /// </summary>
+        public ulong Value => _value;
+
         public static PositionKey Compute(GameConfig config, IReadOnlyList<int> queueX, IReadOnlyList<int> queueO, Occupant nextPlayer)
         {
             int bitsPerSlot = ComputeBitsPerSlot(config.BoardSize);

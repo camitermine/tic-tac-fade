@@ -10,14 +10,16 @@ namespace TicTacFade.Game
     /// Screen-flow state machine (GDD §4.3). Knows nothing about screens
     /// (the UI observes its events) and nothing about rules or the network
     /// SDK: it tells <see cref="GameManager"/> when to start or discard a
-    /// match and <see cref="ISessionService"/> when to create, join or leave
-    /// a room. Adding states means adding enum values, rows to
+    /// match, <see cref="ISessionService"/> when to create, join or leave
+    /// a room, and runs an <see cref="OnlineMatch"/> while in a room. Adding
+    /// states means adding enum values, rows to
     /// <see cref="AllowedTransitions"/> and one intent method per button.
     /// </summary>
     public class MatchFlow : MonoBehaviour
     {
         [SerializeField] GameManager gameManager;
         [SerializeField] SessionServiceBehaviour sessionService;
+        [SerializeField] MatchTransportBehaviour matchTransport;
 
         // Every screen declares explicitly where its cancel/back action goes.
         static readonly Dictionary<FlowState, FlowState[]> AllowedTransitions = new Dictionary<FlowState, FlowState[]>
@@ -27,12 +29,15 @@ namespace TicTacFade.Game
             { FlowState.Result, new[] { FlowState.Playing, FlowState.Menu } },
             // Cancel in the waiting room leaves the room and goes to the menu,
             // also for a player who arrived through the join-by-code screen.
-            { FlowState.Lobby, new[] { FlowState.Menu } },
+            // Playing: the online match starts once both devices are connected.
+            { FlowState.Lobby, new[] { FlowState.Menu, FlowState.Playing } },
             // Cancel in the join-by-code screen goes back to the menu.
             { FlowState.JoinByCode, new[] { FlowState.Lobby, FlowState.Menu } },
         };
 
         ISessionService _session;
+        IMatchTransport _transport;
+        OnlineMatch _online;
 
         public FlowState State { get; private set; } = FlowState.Menu;
 
@@ -55,16 +60,25 @@ namespace TicTacFade.Game
 
         public string JoinCode => _session?.JoinCode;
 
+        /// <summary>True from entering a room until leaving it (waiting room, match, result).</summary>
+        public bool IsOnline => _online != null;
+
+        /// <summary>Online: this device asked for a rematch and waits for the other one.</summary>
+        public bool IsWaitingForRematch => _online != null && _online.LocalRematchRequested;
+
         public event Action<FlowState> StateChanged;
         public event Action<bool> BusyChanged;
         public event Action<SessionFailure> FailureChanged;
         public event Action<bool> OpponentStatusChanged;
+        public event Action<bool> RematchWaitingChanged;
 
         void Awake()
         {
             gameManager.GameEnded += OnGameEnded;
             if (sessionService != null)
                 SetSessionService(sessionService);
+            if (matchTransport != null)
+                SetMatchTransport(matchTransport);
         }
 
         void OnDestroy()
@@ -72,6 +86,7 @@ namespace TicTacFade.Game
             if (gameManager != null)
                 gameManager.GameEnded -= OnGameEnded;
             SetSessionService(null);
+            EndOnlineMatch();
         }
 
         void Start()
@@ -105,6 +120,20 @@ namespace TicTacFade.Game
         }
 
         /// <summary>
+        /// Replaces the match transport (tests inject an in-memory one).
+        /// Only between online matches.
+        /// </summary>
+        public void SetMatchTransport(IMatchTransport transport)
+        {
+            if (IsOnline)
+            {
+                Debug.LogError("Tic-Tac-Fade: can't replace the match transport during an online match.");
+                return;
+            }
+            _transport = transport;
+        }
+
+        /// <summary>
         /// A match started from the menu is a first match: X starts (GDD §3.1).
         /// </summary>
         public void PlayLocal()
@@ -114,28 +143,56 @@ namespace TicTacFade.Game
             StartMatch(Occupant.X);
         }
 
-        /// <summary>Each rematch swaps who starts (GDD §3.1).</summary>
+        /// <summary>
+        /// Each rematch swaps who starts (GDD §3.1). Online this only asks
+        /// for it: the rematch starts when both devices asked.
+        /// </summary>
         public void Rematch()
         {
+            if (IsOnline)
+            {
+                if (State == FlowState.Result && !IsBusy)
+                    _online.RequestRematch();
+                return;
+            }
+
             if (!TryTransitionTo(FlowState.Playing))
                 return;
             StartMatch(CurrentStartingPlayer == Occupant.X ? Occupant.O : Occupant.X);
         }
 
+        /// <summary>
+        /// Result → menu. Online it closes the session: the other device goes
+        /// back to the menu with "El rival salió".
+        /// </summary>
         public void BackToMenu()
         {
+            if (IsOnline)
+            {
+                if (State == FlowState.Result && !IsBusy)
+                    LeaveOnline(SessionFailure.None);
+                return;
+            }
+
             TryTransitionTo(FlowState.Menu);
         }
 
         /// <summary>
-        /// Leaves a match in progress and discards it. Locally that is all it
-        /// does; online this same transition will be "abandon" (a loss).
+        /// Leaves a match in progress and discards it. Online it also closes
+        /// the session, so both devices go back to the menu (counting it as a
+        /// loss is iteration 3).
         /// </summary>
         public void ExitMatch()
         {
-            if (State != FlowState.Playing)
+            if (State != FlowState.Playing || IsBusy)
             {
-                Debug.LogWarning($"Tic-Tac-Fade: ExitMatch ignored, flow is in {State}.");
+                Debug.LogWarning($"Tic-Tac-Fade: ExitMatch ignored, flow is in {State}{(IsBusy ? " (busy)" : "")}.");
+                return;
+            }
+
+            if (IsOnline)
+            {
+                LeaveOnline(SessionFailure.None);
                 return;
             }
 
@@ -211,6 +268,7 @@ namespace TicTacFade.Game
 
             SetOpponentConnected(false);
             TryTransitionTo(FlowState.Lobby);
+            BeginOnlineMatch();
         }
 
         async Task JoinRoomAsync(string code)
@@ -227,10 +285,12 @@ namespace TicTacFade.Game
             // The host is already in the room when the join succeeds.
             SetOpponentConnected(true);
             TryTransitionTo(FlowState.Lobby);
+            BeginOnlineMatch();
         }
 
         async Task LeaveRoomAsync()
         {
+            EndOnlineMatch();
             await _session.LeaveAsync();
             if (this == null) return;
 
@@ -285,17 +345,102 @@ namespace TicTacFade.Game
         {
             if (State == FlowState.Lobby)
                 SetOpponentConnected(false);
+            else if (IsOnlineMatchScreen && !IsBusy)
+                LeaveOnline(SessionFailure.OpponentLeft); // host side: the client left
         }
 
         void OnSessionLost()
         {
             // While busy we are the ones leaving: that is not a lost session.
-            if (State != FlowState.Lobby || IsBusy)
+            if (IsBusy)
                 return;
 
-            SetOpponentConnected(false);
-            TryTransitionTo(FlowState.Menu);
-            SetFailure(SessionFailure.SessionClosed);
+            if (State == FlowState.Lobby)
+            {
+                EndOnlineMatch();
+                SetOpponentConnected(false);
+                TryTransitionTo(FlowState.Menu);
+                SetFailure(SessionFailure.SessionClosed);
+            }
+            else if (IsOnlineMatchScreen)
+            {
+                LeaveOnline(SessionFailure.OpponentLeft); // client side: the host closed the room
+            }
+        }
+
+        bool IsOnlineMatchScreen => IsOnline && (State == FlowState.Playing || State == FlowState.Result);
+
+        void BeginOnlineMatch()
+        {
+            if (_transport == null)
+            {
+                Debug.LogError("Tic-Tac-Fade: MatchFlow has no match transport assigned; the online match can't start.");
+                return;
+            }
+
+            _online = new OnlineMatch(gameManager, _transport);
+            _online.MatchStartRequested += OnOnlineMatchStartRequested;
+            _online.LocalRematchRequestedChanged += OnLocalRematchRequestedChanged;
+            _online.Desynced += OnDesynced;
+            _online.Start();
+        }
+
+        /// <summary>
+        /// Stops the online match and puts the local controllers back, so
+        /// "Jugar local" works as always afterwards.
+        /// </summary>
+        void EndOnlineMatch()
+        {
+            if (_online == null) return;
+
+            _online.MatchStartRequested -= OnOnlineMatchStartRequested;
+            _online.LocalRematchRequestedChanged -= OnLocalRematchRequestedChanged;
+            _online.Desynced -= OnDesynced;
+            _online.Dispose();
+            _online = null;
+
+            if (gameManager != null)
+            {
+                gameManager.DiscardMatch();
+                gameManager.Initialize(new LocalHumanPlayer(Occupant.X), new LocalHumanPlayer(Occupant.O));
+            }
+            RematchWaitingChanged?.Invoke(false);
+        }
+
+        // Closes the session and goes back to the menu, showing why.
+        void LeaveOnline(SessionFailure reason)
+        {
+            RunBusy(async () =>
+            {
+                EndOnlineMatch();
+                await _session.LeaveAsync();
+                if (this == null) return;
+
+                SetOpponentConnected(false);
+                TryTransitionTo(FlowState.Menu);
+                if (reason != SessionFailure.None)
+                    SetFailure(reason);
+            });
+        }
+
+        void OnOnlineMatchStartRequested(Occupant startingPlayer)
+        {
+            if (State != FlowState.Lobby && State != FlowState.Result)
+            {
+                Debug.LogWarning($"Tic-Tac-Fade: online match start ignored, flow is in {State}.");
+                return;
+            }
+
+            if (TryTransitionTo(FlowState.Playing))
+                StartMatch(startingPlayer);
+        }
+
+        void OnLocalRematchRequestedChanged(bool waiting) => RematchWaitingChanged?.Invoke(waiting);
+
+        void OnDesynced()
+        {
+            if (!IsBusy)
+                LeaveOnline(SessionFailure.Desync);
         }
 
         // The state switches to Playing BEFORE the match starts: with

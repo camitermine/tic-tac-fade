@@ -46,13 +46,16 @@ namespace TicTacFade.EditorTools
             var gameManager = gameManagerGO.AddComponent<GameManager>();
             SetPrivateField(gameManager, "config", GetOrCreateGameConfigAsset());
 
-            CreateNetworkManager();
+            var networkManager = CreateNetworkManager();
             var sessionService = new GameObject("SessionService").AddComponent<UgsSessionService>();
+            var matchTransport = new GameObject("MatchTransport").AddComponent<NgoMatchTransport>();
+            SetPrivateField(matchTransport, "networkManager", networkManager);
 
             var matchFlowGO = new GameObject("MatchFlow");
             var matchFlow = matchFlowGO.AddComponent<MatchFlow>();
             SetPrivateField(matchFlow, "gameManager", gameManager);
             SetPrivateField(matchFlow, "sessionService", sessionService);
+            SetPrivateField(matchFlow, "matchTransport", matchTransport);
 
             // Sibling order = draw order. Hidden screens don't block input
             // (FlowScreenVisibility turns off blocksRaycasts).
@@ -176,6 +179,9 @@ namespace TicTacFade.EditorTools
             labelLayout.preferredHeight = 150f;
             labelLayout.flexibleWidth = 1f;
 
+            // Online: "Esperando al rival..." after asking for a rematch.
+            var rematchStatusLabel = CreateLabel("RematchStatus", panelRT, string.Empty, 32, new Color(0.13f, 0.95f, 0.95f), 50f);
+
             var buttonsRT = CreateUIObject("ResultButtons", panelRT, typeof(HorizontalLayoutGroup), typeof(LayoutElement));
             var buttonsLayout = buttonsRT.GetComponent<HorizontalLayoutGroup>();
             buttonsLayout.spacing = 24f;
@@ -194,6 +200,7 @@ namespace TicTacFade.EditorTools
             var resultScreen = screenRT.gameObject.AddComponent<ResultScreen>();
             SetPrivateField(resultScreen, "flow", flow);
             SetPrivateField(resultScreen, "resultLabel", resultLabel);
+            SetPrivateField(resultScreen, "rematchStatusLabel", rematchStatusLabel);
             SetPrivateField(resultScreen, "rematchButton", rematchButton);
             SetPrivateField(resultScreen, "menuButton", menuButton);
         }
@@ -334,12 +341,13 @@ namespace TicTacFade.EditorTools
         /// network starts the Netcode host/client on this object, and fails
         /// if NetworkManager.Singleton isn't set.
         /// </summary>
-        static void CreateNetworkManager()
+        static Unity.Netcode.NetworkManager CreateNetworkManager()
         {
             var networkGO = new GameObject("NetworkManager");
             var transport = networkGO.AddComponent<Unity.Netcode.Transports.UTP.UnityTransport>();
             var networkManager = networkGO.AddComponent<Unity.Netcode.NetworkManager>();
             networkManager.NetworkConfig.NetworkTransport = transport;
+            return networkManager;
         }
 
         static void ConfigureVerticalLayout(RectTransform rt, RectOffset padding, float spacing)

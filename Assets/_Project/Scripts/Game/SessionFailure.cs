@@ -22,5 +22,11 @@ namespace TicTacFade.Game
         /// room: the SDK doesn't tell it apart from other refusals).
         /// </summary>
         JoinRejected = 9,
+
+        /// <summary>The other player left an online match (or its result screen).</summary>
+        OpponentLeft = 10,
+
+        /// <summary>Both devices disagreed on the position; the match was cut.</summary>
+        Desync = 11,
     }
 }

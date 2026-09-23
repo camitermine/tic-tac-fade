@@ -38,9 +38,17 @@ namespace TicTacFade.UI
             UpdateActiveCounts(state.GetActiveCount(Occupant.X), state.GetActiveCount(Occupant.O), state.Config.BufferSize);
         }
 
+        // Local (both sides human on this device): who moves by symbol.
+        // Online (one human here): from this player's point of view.
         void SetTurn(Occupant player)
         {
-            turnLabel.text = $"Turno: Jugador {(player == Occupant.X ? "X" : "O")}";
+            bool xHuman = gameManager.IsLocalHuman(Occupant.X);
+            bool oHuman = gameManager.IsLocalHuman(Occupant.O);
+
+            if (xHuman != oHuman)
+                turnLabel.text = gameManager.IsLocalHuman(player) ? "Tu turno" : "Turno del rival";
+            else
+                turnLabel.text = $"Turno: Jugador {(player == Occupant.X ? "X" : "O")}";
         }
 
         void UpdateActiveCounts(int countX, int countO, int bufferSize)
