@@ -49,22 +49,38 @@ namespace TicTacFade.Game
                 Initialize(new LocalHumanPlayer(Occupant.X), new LocalHumanPlayer(Occupant.O));
         }
 
-        void Start()
+        /// <summary>
+        /// Starts a match. Called by <see cref="MatchFlow"/>, which decides
+        /// who starts; GameManager no longer starts one on its own.
+        /// </summary>
+        public void StartNewGame(Occupant startingPlayer)
         {
-            // Fired from Start (not Awake) to guarantee that any subscriber
-            // (BoardView, GameHud) has already subscribed in its own Awake
-            // before receiving the first StateChanged.
-            StartNewGame();
-        }
-
-        public void StartNewGame()
-        {
-            CurrentState = GameState.CreateInitial(config.ToGameConfig(), Occupant.X);
+            CurrentState = GameState.CreateInitial(config.ToGameConfig(), startingPlayer);
             StateChanged?.Invoke(CurrentState);
             AdvanceTurns();
         }
 
-        public void OnCellClicked(int cellIndex) => CurrentPlayerController.NotifyCellSelected(cellIndex);
+        /// <summary>
+        /// Drops the match in progress without ending it (no GameEnded, no
+        /// StateChanged). Afterwards <see cref="CurrentState"/> is null
+        /// again, same as before the first match.
+        /// </summary>
+        public void DiscardMatch()
+        {
+            CurrentState = null;
+        }
+
+        /// <summary>
+        /// Ignored silently while there is no match in progress
+        /// (<see cref="CurrentState"/> null in the menu, or a finished match):
+        /// a stray tap is not a game error.
+        /// </summary>
+        public void OnCellClicked(int cellIndex)
+        {
+            if (CurrentState == null || CurrentState.IsOver)
+                return;
+            CurrentPlayerController.NotifyCellSelected(cellIndex);
+        }
 
         IPlayerController CurrentPlayerController => CurrentState.CurrentPlayer == Occupant.X ? _playerX : _playerO;
 

@@ -37,6 +37,12 @@ namespace TicTacFade.UI
 
         void OnCellClicked(int index)
         {
+            // No match in progress (menu before the first match, after
+            // leaving one, or a finished match): no selection, no preview.
+            var state = gameManager.CurrentState;
+            if (state == null || state.IsOver)
+                return;
+
             if (selectedCell.HasValue && selectedCell.Value == index)
             {
                 // Second tap on the already-selected cell: confirm.
@@ -51,7 +57,6 @@ namespace TicTacFade.UI
             ClearGhostPreview();
             selectedCell = index;
 
-            var state = gameManager.CurrentState;
             var player = state.CurrentPlayer;
             cells[index].ShowGhost(player);
 
@@ -70,6 +75,8 @@ namespace TicTacFade.UI
                 cell.SetGhostVictim(false);
         }
 
+        // GameManager never raises StateChanged with a null state, so this
+        // path needs no null guard.
         void OnStateChanged(GameState state)
         {
             ClearGhostPreview();

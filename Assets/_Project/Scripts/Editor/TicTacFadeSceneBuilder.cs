@@ -41,28 +41,19 @@ namespace TicTacFade.EditorTools
             scaler.referenceResolution = new Vector2(1080, 1920);
             scaler.matchWidthOrHeight = 0.5f;
 
-            var boardPanel = CreateBoardPanel(canvasGO.transform, out var cellViews);
-            var hud = CreateHud(canvasGO.transform);
-            var winBanner = CreateWinBanner(canvasGO.transform, out var winLabel, out var restartButton);
-
-            var boardView = boardPanel.gameObject.AddComponent<BoardView>();
-            SetPrivateField(boardView, "cells", cellViews);
-
-            var gameHud = hud.gameObject.AddComponent<GameHud>();
-            SetPrivateField(gameHud, "turnLabel", hud.Find("TurnLabel").GetComponent<Text>());
-            SetPrivateField(gameHud, "countLabelX", hud.Find("CountsRow/CountX").GetComponent<Text>());
-            SetPrivateField(gameHud, "countLabelO", hud.Find("CountsRow/CountO").GetComponent<Text>());
-            SetPrivateField(gameHud, "fadeWarningLabel", hud.Find("FadeWarning").GetComponent<Text>());
-            SetPrivateField(gameHud, "gameEndedBanner", winBanner.gameObject);
-            SetPrivateField(gameHud, "gameEndedLabel", winLabel);
-
             var gameManagerGO = new GameObject("GameManager");
             var gameManager = gameManagerGO.AddComponent<GameManager>();
             SetPrivateField(gameManager, "config", GetOrCreateGameConfigAsset());
-            SetPrivateField(boardView, "gameManager", gameManager);
-            SetPrivateField(gameHud, "gameManager", gameManager);
 
-            restartButton.SetGameManager(gameManager);
+            var matchFlowGO = new GameObject("MatchFlow");
+            var matchFlow = matchFlowGO.AddComponent<MatchFlow>();
+            SetPrivateField(matchFlow, "gameManager", gameManager);
+
+            // Sibling order = draw order: the menu goes last so it covers
+            // everything while visible.
+            CreateGameScreen(canvasGO.transform, gameManager, matchFlow);
+            CreateResultScreen(canvasGO.transform, matchFlow);
+            CreateMenuScreen(canvasGO.transform, matchFlow);
 
             EditorSceneManager.SaveScene(scene, ScenePath);
 
@@ -112,11 +103,180 @@ namespace TicTacFade.EditorTools
                 cameraGO.AddComponent<UniversalAdditionalCameraData>();
         }
 
+        /// <summary>
+        /// Root of every screen: full-screen container that respects the
+        /// device safe area on all four edges, shown only in the given flow
+        /// states. UnityEngine.UI.SafeArea has no Reset() and no initializer
+        /// for its edges, so when added from code it respects NO edge unless
+        /// Edges is set explicitly — that is what left the HUD under the
+        /// punch-hole camera (ai-log [11], corrected in [12]).
+        /// </summary>
+        static RectTransform CreateSafeAreaScreen(string name, Transform parent, MatchFlow flow, params FlowState[] visibleIn)
+        {
+            var screenRT = CreateUIObject(name, parent, typeof(SafeArea), typeof(CanvasGroup), typeof(FlowScreenVisibility));
+            StretchFull(screenRT);
+
+            screenRT.GetComponent<SafeArea>().Edges =
+                SafeArea.SafeAreaMode.Top | SafeArea.SafeAreaMode.Right | SafeArea.SafeAreaMode.Bottom | SafeArea.SafeAreaMode.Left;
+
+            var visibility = screenRT.GetComponent<FlowScreenVisibility>();
+            SetPrivateField(visibility, "flow", flow);
+            SetPrivateField(visibility, "visibleIn", visibleIn);
+            return screenRT;
+        }
+
+        static void CreateGameScreen(Transform parent, GameManager gameManager, MatchFlow flow)
+        {
+            // Visible in Result too: the board and its highlighted winning
+            // line stay on screen above the result panel.
+            var screenRT = CreateSafeAreaScreen("GameScreen", parent, flow, FlowState.Playing, FlowState.Result);
+
+            var boardPanel = CreateBoardPanel(screenRT, out var cellViews);
+            var boardView = boardPanel.gameObject.AddComponent<BoardView>();
+            SetPrivateField(boardView, "cells", cellViews);
+            SetPrivateField(boardView, "gameManager", gameManager);
+
+            var hud = CreateHud(screenRT, flow);
+            var gameHud = hud.gameObject.AddComponent<GameHud>();
+            SetPrivateField(gameHud, "gameManager", gameManager);
+            SetPrivateField(gameHud, "turnLabel", hud.Find("TurnLabel").GetComponent<Text>());
+            SetPrivateField(gameHud, "countLabelX", hud.Find("CountsRow/CountX").GetComponent<Text>());
+            SetPrivateField(gameHud, "countLabelO", hud.Find("CountsRow/CountO").GetComponent<Text>());
+            SetPrivateField(gameHud, "fadeWarningLabel", hud.Find("FadeWarning").GetComponent<Text>());
+        }
+
+        static void CreateResultScreen(Transform parent, MatchFlow flow)
+        {
+            var screenRT = CreateSafeAreaScreen("ResultScreen", parent, flow, FlowState.Result);
+
+            // Bottom panel, not a full-screen overlay: the board above keeps
+            // showing the winning line (GDD §4.2).
+            var panelRT = CreateUIObject("ResultPanel", screenRT, typeof(Image), typeof(VerticalLayoutGroup), typeof(ContentSizeFitter));
+            panelRT.anchorMin = new Vector2(0f, 0f);
+            panelRT.anchorMax = new Vector2(1f, 0f);
+            panelRT.pivot = new Vector2(0.5f, 0f);
+            panelRT.anchoredPosition = Vector2.zero;
+            panelRT.sizeDelta = new Vector2(0f, panelRT.sizeDelta.y);
+            panelRT.GetComponent<Image>().color = new Color(0f, 0f, 0f, 0.85f);
+            ConfigureVerticalLayout(panelRT, new RectOffset(48, 48, 40, 48), 32f);
+
+            var labelRT = CreateUIObject("ResultLabel", panelRT, typeof(Text), typeof(LayoutElement));
+            var resultLabel = labelRT.GetComponent<Text>();
+            ConfigureText(resultLabel, 52, TextAnchor.MiddleCenter, Color.white);
+            resultLabel.horizontalOverflow = HorizontalWrapMode.Wrap;
+            resultLabel.verticalOverflow = VerticalWrapMode.Overflow;
+            var labelLayout = labelRT.GetComponent<LayoutElement>();
+            labelLayout.preferredHeight = 150f;
+            labelLayout.flexibleWidth = 1f;
+
+            var buttonsRT = CreateUIObject("ResultButtons", panelRT, typeof(HorizontalLayoutGroup), typeof(LayoutElement));
+            var buttonsLayout = buttonsRT.GetComponent<HorizontalLayoutGroup>();
+            buttonsLayout.spacing = 24f;
+            buttonsLayout.childAlignment = TextAnchor.MiddleCenter;
+            buttonsLayout.childControlWidth = true;
+            buttonsLayout.childControlHeight = true;
+            buttonsLayout.childForceExpandWidth = true;
+            buttonsLayout.childForceExpandHeight = true;
+            var buttonsLayoutElement = buttonsRT.GetComponent<LayoutElement>();
+            buttonsLayoutElement.minHeight = 110f;
+            buttonsLayoutElement.flexibleWidth = 1f; // nested layout group: see CountsRow in CreateHud
+
+            var rematchButton = CreateButton("RematchButton", buttonsRT, "Revancha", 40, new Color(0.13f, 0.95f, 0.95f), Color.black, 110f);
+            var menuButton = CreateButton("MenuButton", buttonsRT, "Menú", 40, new Color(1f, 1f, 1f, 0.15f), Color.white, 110f);
+
+            var resultScreen = screenRT.gameObject.AddComponent<ResultScreen>();
+            SetPrivateField(resultScreen, "flow", flow);
+            SetPrivateField(resultScreen, "resultLabel", resultLabel);
+            SetPrivateField(resultScreen, "rematchButton", rematchButton);
+            SetPrivateField(resultScreen, "menuButton", menuButton);
+        }
+
+        static void CreateMenuScreen(Transform parent, MatchFlow flow)
+        {
+            var screenRT = CreateSafeAreaScreen("MenuScreen", parent, flow, FlowState.Menu);
+
+            // Opaque background so the (hidden anyway) game screen never
+            // shows through while the menu is up.
+            var backgroundRT = CreateUIObject("Background", screenRT, typeof(Image));
+            StretchFull(backgroundRT);
+            backgroundRT.GetComponent<Image>().color = new Color(0.05f, 0.05f, 0.08f);
+
+            var layoutRT = CreateUIObject("MenuLayout", screenRT, typeof(VerticalLayoutGroup), typeof(ContentSizeFitter));
+            layoutRT.anchorMin = new Vector2(0f, 0.5f);
+            layoutRT.anchorMax = new Vector2(1f, 0.5f);
+            layoutRT.pivot = new Vector2(0.5f, 0.5f);
+            layoutRT.anchoredPosition = Vector2.zero;
+            layoutRT.sizeDelta = new Vector2(0f, layoutRT.sizeDelta.y);
+            ConfigureVerticalLayout(layoutRT, new RectOffset(96, 96, 0, 0), 96f);
+
+            var titleRT = CreateUIObject("Title", layoutRT, typeof(Text), typeof(LayoutElement));
+            var title = titleRT.GetComponent<Text>();
+            ConfigureText(title, 96, TextAnchor.MiddleCenter, Color.white);
+            title.text = "Tic-Tac-Fade";
+            title.horizontalOverflow = HorizontalWrapMode.Wrap;
+            title.verticalOverflow = VerticalWrapMode.Overflow;
+            var titleLayout = titleRT.GetComponent<LayoutElement>();
+            titleLayout.preferredHeight = 160f;
+            titleLayout.flexibleWidth = 1f;
+
+            // The online buttons (create room, join with code) are added
+            // here as siblings of PlayLocalButton; the layout needs no change.
+            var buttonsRT = CreateUIObject("MenuButtons", layoutRT, typeof(VerticalLayoutGroup), typeof(LayoutElement));
+            ConfigureVerticalLayout(buttonsRT, new RectOffset(0, 0, 0, 0), 32f);
+            buttonsRT.GetComponent<LayoutElement>().flexibleWidth = 1f; // nested layout group: see CountsRow in CreateHud
+
+            var playLocalButton = CreateButton("PlayLocalButton", buttonsRT, "Jugar local", 48, new Color(0.13f, 0.95f, 0.95f), Color.black, 130f);
+
+            var menuScreen = screenRT.gameObject.AddComponent<MenuScreen>();
+            SetPrivateField(menuScreen, "flow", flow);
+            SetPrivateField(menuScreen, "playLocalButton", playLocalButton);
+        }
+
+        static void ConfigureVerticalLayout(RectTransform rt, RectOffset padding, float spacing)
+        {
+            var layout = rt.GetComponent<VerticalLayoutGroup>();
+            layout.padding = padding;
+            layout.spacing = spacing;
+            layout.childAlignment = TextAnchor.UpperCenter;
+            layout.childControlWidth = true;
+            layout.childControlHeight = true;
+            layout.childForceExpandWidth = true;
+            layout.childForceExpandHeight = false;
+
+            var fitter = rt.GetComponent<ContentSizeFitter>();
+            if (fitter != null)
+            {
+                fitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
+                fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+            }
+        }
+
+        static Button CreateButton(string name, Transform parent, string text, int fontSize, Color background, Color textColor, float preferredHeight)
+        {
+            var buttonRT = CreateUIObject(name, parent, typeof(Image), typeof(Button), typeof(LayoutElement));
+            var image = buttonRT.GetComponent<Image>();
+            image.sprite = AssetDatabase.GetBuiltinExtraResource<Sprite>("UI/Skin/UISprite.psd");
+            image.type = Image.Type.Sliced;
+            image.color = background;
+
+            var layoutElement = buttonRT.GetComponent<LayoutElement>();
+            layoutElement.preferredHeight = preferredHeight;
+            layoutElement.flexibleWidth = 1f;
+
+            var labelRT = CreateUIObject("Label", buttonRT, typeof(Text));
+            StretchFull(labelRT);
+            var label = labelRT.GetComponent<Text>();
+            ConfigureText(label, fontSize, TextAnchor.MiddleCenter, textColor);
+            label.text = text;
+
+            return buttonRT.GetComponent<Button>();
+        }
+
         static RectTransform CreateBoardPanel(Transform parent, out CellView[] cells)
         {
             var panelRT = CreateUIObject("BoardPanel", parent, typeof(GridLayoutGroup));
             panelRT.anchorMin = panelRT.anchorMax = new Vector2(0.5f, 0.5f);
-            panelRT.anchoredPosition = new Vector2(0f, 60f);
+            panelRT.anchoredPosition = Vector2.zero;
             panelRT.sizeDelta = new Vector2(3 * 150f + 2 * 10f, 3 * 150f + 2 * 10f);
 
             var grid = panelRT.GetComponent<GridLayoutGroup>();
@@ -185,17 +345,12 @@ namespace TicTacFade.EditorTools
             return cellView;
         }
 
-        static Transform CreateHud(Transform parent)
+        static Transform CreateHud(Transform parent, MatchFlow flow)
         {
-            // Wrapping the HUD in its own SafeArea container keeps the turn
-            // label and counters clear of notches/cutouts and the Android
-            // gesture bar without hardcoding per-device offsets. Uses Unity's
-            // own built-in UnityEngine.UI.SafeArea component rather than a
-            // hand-rolled one.
-            var safeAreaRT = CreateUIObject("SafeAreaHUD", parent, typeof(SafeArea));
-            StretchFull(safeAreaRT);
-
-            var hudRT = CreateUIObject("HUD", safeAreaRT, typeof(VerticalLayoutGroup), typeof(ContentSizeFitter));
+            // The parent is the GameScreen, already a SafeArea container
+            // (CreateSafeAreaScreen): the HUD stays clear of notches/cutouts
+            // and the gesture bar without per-device offsets.
+            var hudRT = CreateUIObject("HUD", parent, typeof(VerticalLayoutGroup), typeof(ContentSizeFitter));
             hudRT.anchorMin = new Vector2(0f, 1f);
             hudRT.anchorMax = new Vector2(1f, 1f);
             hudRT.pivot = new Vector2(0.5f, 1f);
@@ -222,6 +377,8 @@ namespace TicTacFade.EditorTools
             var hudFitter = hudRT.GetComponent<ContentSizeFitter>();
             hudFitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
             hudFitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+
+            CreateTopBar(hudRT, flow);
 
             var turnRT = CreateUIObject("TurnLabel", hudRT, typeof(Text), typeof(LayoutElement));
             var turnLabel = turnRT.GetComponent<Text>();
@@ -280,43 +437,36 @@ namespace TicTacFade.EditorTools
             return hudRT;
         }
 
-        static RectTransform CreateWinBanner(Transform parent, out Text winLabel, out RestartButton restartButton)
+        /// <summary>
+        /// First HUD row: a small, low-contrast "Salir" button pinned to the
+        /// right so it doesn't compete with the board. Only visible while
+        /// Playing; in Result the panel's "Menú" button covers the same exit.
+        /// </summary>
+        static void CreateTopBar(Transform hud, MatchFlow flow)
         {
-            var bannerRT = CreateUIObject("WinBanner", parent, typeof(Image));
-            bannerRT.anchorMin = bannerRT.anchorMax = new Vector2(0.5f, 0.5f);
-            bannerRT.sizeDelta = new Vector2(700f, 320f);
-            bannerRT.anchoredPosition = Vector2.zero;
-            var bg = bannerRT.GetComponent<Image>();
-            bg.color = new Color(0f, 0f, 0f, 0.85f);
-            bannerRT.gameObject.SetActive(false);
+            var topBarRT = CreateUIObject("TopBar", hud, typeof(HorizontalLayoutGroup), typeof(LayoutElement));
+            var topBarLayout = topBarRT.GetComponent<HorizontalLayoutGroup>();
+            topBarLayout.childAlignment = TextAnchor.UpperRight;
+            topBarLayout.childControlWidth = true;
+            topBarLayout.childControlHeight = true;
+            topBarLayout.childForceExpandWidth = false;
+            topBarLayout.childForceExpandHeight = false;
+            var topBarLayoutElement = topBarRT.GetComponent<LayoutElement>();
+            topBarLayoutElement.minHeight = 64f;
+            topBarLayoutElement.flexibleWidth = 1f; // nested layout group: see CountsRow below
 
-            var labelRT = CreateUIObject("WinLabel", bannerRT, typeof(Text));
-            labelRT.anchorMin = new Vector2(0f, 0.45f);
-            labelRT.anchorMax = new Vector2(1f, 1f);
-            labelRT.offsetMin = Vector2.zero;
-            labelRT.offsetMax = Vector2.zero;
-            winLabel = labelRT.GetComponent<Text>();
-            ConfigureText(winLabel, 48, TextAnchor.MiddleCenter, Color.white);
+            var exitButton = CreateButton("ExitButton", topBarRT, "Salir", 28, new Color(1f, 1f, 1f, 0.08f), new Color(1f, 1f, 1f, 0.6f), 64f);
+            var exitLayoutElement = exitButton.GetComponent<LayoutElement>();
+            exitLayoutElement.preferredWidth = 180f;
+            exitLayoutElement.flexibleWidth = 0f;
 
-            var buttonRT = CreateUIObject("RestartButton", bannerRT, typeof(Image), typeof(Button));
-            buttonRT.anchorMin = new Vector2(0.5f, 0f);
-            buttonRT.anchorMax = new Vector2(0.5f, 0f);
-            buttonRT.pivot = new Vector2(0.5f, 0f);
-            buttonRT.sizeDelta = new Vector2(280f, 90f);
-            buttonRT.anchoredPosition = new Vector2(0f, 30f);
-            var buttonImage = buttonRT.GetComponent<Image>();
-            buttonImage.sprite = AssetDatabase.GetBuiltinExtraResource<Sprite>("UI/Skin/UISprite.psd");
-            buttonImage.type = Image.Type.Sliced;
-            buttonImage.color = new Color(0.13f, 0.95f, 0.95f);
-            restartButton = buttonRT.gameObject.AddComponent<RestartButton>();
+            var exitVisibility = exitButton.gameObject.AddComponent<FlowScreenVisibility>(); // RequireComponent adds its CanvasGroup
+            SetPrivateField(exitVisibility, "flow", flow);
+            SetPrivateField(exitVisibility, "visibleIn", new[] { FlowState.Playing });
 
-            var buttonLabelRT = CreateUIObject("Label", buttonRT, typeof(Text));
-            StretchFull(buttonLabelRT);
-            var buttonLabel = buttonLabelRT.GetComponent<Text>();
-            buttonLabel.text = "Reintentar";
-            ConfigureText(buttonLabel, 32, TextAnchor.MiddleCenter, Color.black);
-
-            return bannerRT;
+            var exitMatchButton = exitButton.gameObject.AddComponent<ExitMatchButton>();
+            SetPrivateField(exitMatchButton, "flow", flow);
+            SetPrivateField(exitMatchButton, "button", exitButton);
         }
 
         static RectTransform CreateUIObject(string name, Transform parent, params System.Type[] extraComponents)
