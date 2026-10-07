@@ -17,6 +17,7 @@ namespace TicTacFade.PlayModeTests
     {
         InMemoryMatchTransport _hostTransport;
         InMemoryMatchTransport _clientTransport;
+        ManualClock _clock;
         OnlineTestDevice _host;
         OnlineTestDevice _client;
 
@@ -24,8 +25,9 @@ namespace TicTacFade.PlayModeTests
         public void SetUp()
         {
             InMemoryMatchTransport.CreatePair(out _hostTransport, out _clientTransport);
-            _host = new OnlineTestDevice("HostDevice", _hostTransport);
-            _client = new OnlineTestDevice("ClientDevice", _clientTransport);
+            _clock = new ManualClock(); // never advanced here: no timer ever fires in these tests
+            _host = new OnlineTestDevice("HostDevice", _hostTransport, _clock);
+            _client = new OnlineTestDevice("ClientDevice", _clientTransport, _clock);
         }
 
         [TearDown]

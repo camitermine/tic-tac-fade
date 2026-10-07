@@ -24,7 +24,7 @@ namespace TicTacFade.UI
         void Awake()
         {
             flow.StateChanged += OnFlowStateChanged;
-            flow.RematchWaitingChanged += OnRematchWaitingChanged;
+            flow.ResultOptionsChanged += OnResultOptionsChanged;
             flow.BusyChanged += OnBusyChanged;
             rematchButton.onClick.AddListener(flow.Rematch);
             menuButton.onClick.AddListener(flow.BackToMenu);
@@ -34,7 +34,7 @@ namespace TicTacFade.UI
         {
             if (flow == null) return;
             flow.StateChanged -= OnFlowStateChanged;
-            flow.RematchWaitingChanged -= OnRematchWaitingChanged;
+            flow.ResultOptionsChanged -= OnResultOptionsChanged;
             flow.BusyChanged -= OnBusyChanged;
             rematchButton.onClick.RemoveListener(flow.Rematch);
             menuButton.onClick.RemoveListener(flow.BackToMenu);
@@ -47,23 +47,40 @@ namespace TicTacFade.UI
             RefreshButtons();
         }
 
-        void OnRematchWaitingChanged(bool waiting) => RefreshButtons();
+        void OnResultOptionsChanged()
+        {
+            if (flow.State == FlowState.Result)
+                resultLabel.text = ResolveMessage(flow.LastResult);
+            RefreshButtons();
+        }
 
         void OnBusyChanged(bool busy) => RefreshButtons();
 
+        // Online, the rematch is gone when the other device left or abandoned.
         void RefreshButtons()
         {
             bool waiting = flow.IsWaitingForRematch;
-            rematchButton.interactable = !waiting && !flow.IsBusy;
+            rematchButton.interactable = flow.CanRematch && !waiting && !flow.IsBusy;
             menuButton.interactable = !flow.IsBusy;
             rematchStatusLabel.text = waiting ? WaitingForRematchText : string.Empty;
         }
 
-        static string ResolveMessage(GameEndedEvent evt)
+        string ResolveMessage(MatchResult result)
         {
-            if (evt == null)
+            if (result == null)
                 return "Fin de la partida";
 
+            if (result.IsAbandonment)
+            {
+                // Seen by whoever stays: the one who pressed "Salir" or
+                // dropped is not on this screen. The only way to see your
+                // own abandonment is letting the turns expire.
+                return result.Abandoner == flow.OnlineLocalSymbol
+                    ? $"Perdiste: {flow.MaxConsecutiveTimeouts} turnos sin jugar"
+                    : "Ganaste: el rival abandonó";
+            }
+
+            var evt = result.BoardEnd;
             switch (evt.Reason)
             {
                 case GameEndReason.Win:

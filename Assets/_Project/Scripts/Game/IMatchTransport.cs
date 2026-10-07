@@ -22,6 +22,13 @@ namespace TicTacFade.Game
         /// <summary>Host side: the other device just connected.</summary>
         event Action PeerConnected;
 
+        /// <summary>
+        /// The network reported that the other device is gone (host side:
+        /// the client dropped; client side: the connection to the host
+        /// dropped). Explicit, unlike a turn simply not being played.
+        /// </summary>
+        event Action PeerDisconnected;
+
         event Action<MatchMessage> MessageReceived;
 
         /// <summary>Sends to the other device.</summary>

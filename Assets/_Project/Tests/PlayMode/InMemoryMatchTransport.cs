@@ -18,6 +18,8 @@ namespace TicTacFade.PlayModeTests
         InMemoryMatchTransport _peer;
         bool _open;
         bool _peerConnected;
+        bool _dead;
+        bool _ignoresIncoming;
 
         public bool IsHost { get; }
         public bool IsPeerConnected => IsHost && _peerConnected;
@@ -26,7 +28,27 @@ namespace TicTacFade.PlayModeTests
         public List<MatchMessage> Sent { get; } = new List<MatchMessage>();
 
         public event Action PeerConnected;
+        public event Action PeerDisconnected;
         public event Action<MatchMessage> MessageReceived;
+
+        /// <summary>
+        /// This device drops off the network: nothing in flight arrives,
+        /// nothing it sends later arrives, and the other endpoint gets
+        /// PeerDisconnected (what Netcode reports on a real drop).
+        /// </summary>
+        public void Drop()
+        {
+            _dead = true;
+            _inFlight.Clear();
+            _peer._inFlight.Clear();
+            _peer.PeerDisconnected?.Invoke();
+        }
+
+        /// <summary>
+        /// This device stays connected but stops answering: everything sent
+        /// to it is lost, and the network reports nothing (a hung host).
+        /// </summary>
+        public void StopResponding() => _ignoresIncoming = true;
 
         InMemoryMatchTransport(bool isHost) => IsHost = isHost;
 
@@ -48,7 +70,8 @@ namespace TicTacFade.PlayModeTests
         public void Send(MatchMessage message)
         {
             Sent.Add(message);
-            _inFlight.Enqueue(message);
+            if (!_dead)
+                _inFlight.Enqueue(message);
         }
 
         public void Open()
@@ -86,6 +109,8 @@ namespace TicTacFade.PlayModeTests
 
         void Receive(MatchMessage message)
         {
+            if (_dead || _ignoresIncoming)
+                return;
             if (_open)
                 MessageReceived?.Invoke(message);
             else

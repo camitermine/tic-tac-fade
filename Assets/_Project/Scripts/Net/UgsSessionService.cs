@@ -37,26 +37,43 @@ namespace TicTacFade.Net
 
         public override async Task<SessionResult> CreateAsync()
         {
+            float startedAt = Time.realtimeSinceStartup;
+            NetDiagnostics.Log("create room: started.");
+
             var failure = await PrepareAsync();
             if (failure != SessionFailure.None)
-                return SessionResult.Fail(failure);
+                return LogOutcome("create room", startedAt, SessionResult.Fail(failure));
 
-            return await RunSessionOperationAsync(async () =>
+            var result = await RunSessionOperationAsync(async () =>
             {
                 var options = new SessionOptions { MaxPlayers = MaxPlayers, IsPrivate = true }.WithRelayNetwork();
                 return await MultiplayerService.Instance.CreateSessionAsync(options);
             }, SessionFailureMapper.Map);
+            return LogOutcome("create room", startedAt, result);
         }
 
         public override async Task<SessionResult> JoinByCodeAsync(string code)
         {
+            float startedAt = Time.realtimeSinceStartup;
+            NetDiagnostics.Log($"join room {code}: started.");
+
             var failure = await PrepareAsync();
             if (failure != SessionFailure.None)
-                return SessionResult.Fail(failure);
+                return LogOutcome($"join room {code}", startedAt, SessionResult.Fail(failure));
+            NetDiagnostics.Log($"join room {code}: ready after {Time.realtimeSinceStartup - startedAt:F2}s (sign-in and network idle); joining.");
 
-            return await RunSessionOperationAsync(
+            var result = await RunSessionOperationAsync(
                 () => MultiplayerService.Instance.JoinSessionByCodeAsync(code),
                 SessionFailureMapper.MapJoin);
+            return LogOutcome($"join room {code}", startedAt, result);
+        }
+
+        // Diagnostic: how long a create/join took end to end, and how it ended
+        // (the first join on a cold device is the slowest one).
+        static SessionResult LogOutcome(string operation, float startedAt, SessionResult result)
+        {
+            NetDiagnostics.Log($"{operation}: {(result.Success ? "succeeded" : "failed (" + result.Failure + ")")} after {Time.realtimeSinceStartup - startedAt:F2}s.");
+            return result;
         }
 
         public override async Task LeaveAsync()

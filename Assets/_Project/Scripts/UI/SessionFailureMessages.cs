@@ -22,6 +22,7 @@ namespace TicTacFade.UI
                 case SessionFailure.JoinRejected: return "No se pudo unir a la sala. Revisá el código o pedí uno nuevo.";
                 case SessionFailure.OpponentLeft: return "El rival salió.";
                 case SessionFailure.Desync: return "Se perdió la sincronización con el rival.";
+                case SessionFailure.ConnectionLost: return "Se perdió la conexión con el rival.";
                 default: return "No se pudo conectar. Intentá de nuevo.";
             }
         }

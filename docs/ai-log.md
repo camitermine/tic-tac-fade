@@ -559,7 +559,7 @@ El objetivo es que quede visible **qué se le pidió a la IA, qué produjo y qu�
 - PlayMode 45/45 vía MCP (34 + 6 de `OnlineMatchTests` + 5 de `OnlineMatchFlowTests`), incluido el modo local sin cambios.
 - Builder corrido 2 veces sin duplicados.
 - Los errores y warnings que quedan en consola después de la suite los generan los tests a propósito (rechazos, desync forzado, código `AB12CD`).
-- **Pendiente (Cami), con dos dispositivos reales:** partida completa hasta ganar, revancha (arranca O), empate por repetición si se puede forzar, y "Menú" desde el resultado en uno de los dos.
+- **Device real (Cami, APK en dos dispositivos):** crear sala, unirse por código, partida online completa, ganar, perder, revancha y el resto del flujo de resultado funcionan.
 
 **Pendientes para la iteración 3:**
 - **Cliente bloqueado sin respuesta del host:** si una propuesta del cliente nunca recibe `Confirmed` ni `Rejected` (host caído), `OnlineLocalPlayer` queda pendiente para siempre con el input bloqueado. Necesita timeout o recuperación junto con el manejo de desconexiones.
@@ -568,6 +568,118 @@ El objetivo es que quede visible **qué se le pidió a la IA, qué produjo y qu�
 
 **Aprendizajes:**
 - Separar la autoridad (`OnlineMatch`) del transporte (`IMatchTransport`) permitió testear el modelo completo, incluidos desync y buffer, sin red ni escena. Un transporte en memoria que entrega recién en `Pump` reproduce la asincronía real; uno que entregara al instante habría escondido el caso del `StartMatch` que llega temprano.
+
+**Commit(s):** — (sin commitear; Cami revisa y commitea).
+
+---
+
+## [15] 2026-09-23 — Online iteración 3: timer de turno, modo ausente, desconexiones y abandono
+
+**Objetivo:** `docs/prompts/online-3-robustness.md`. Timer de turno autoritativo del host con jugada automática al vencer, modo ausente, abandono por 3 vencimientos y por "Salir", manejo de caída del host y del cliente, y el pendiente de la iteración 2 (propuesta sin respuesta).
+
+**Pedido / prompt:**
+- Cami confirma que 3 vencimientos consecutivos son derrota por abandono.
+- El host es dueño del timer (30 s / 10 s) y el cliente solo muestra la cuenta regresiva.
+- La jugada al azar vive en Game, con fuente inyectable.
+- "Salir" es derrota ("Ganaste: el rival abandonó" para el que queda). Si modelar el abandono requiere tocar el Core, parar y proponer antes.
+- Caída del cliente: la partida sigue. Caída del host: menú con "Se perdió la conexión con el rival".
+- HUD con tiempo y "ausente".
+- Tiempo inyectable en tests y cobertura de todos los casos con el transporte en memoria.
+
+**Qué hizo la IA:**
+- **Plan con decisiones a aprobar.** El primer mensaje del plan le llegó a Cami incompleto y mezclado con el cierre de la iteración 2, así que se reenviaron los puntos 1 a 7 completos.
+- **Core:** sin cambios. El abandono se modeló en Game (`MatchResult`, `GameManager.Halt()`), así que no hizo falta parar a proponer. La primera propuesta ponía los parámetros del timer en el `GameConfig` del Core siguiendo la regla 6 del CLAUDE.md tal como estaba escrita; Cami la corrigió (ver Revisión humana).
+- **Game:**
+  - Nuevos: `OnlineTimerConfig` (expuesto por `GameConfigAsset.ToOnlineTimerConfig()`), `OnlineNetworkSettings`, `IClock` + `UnityClock`, `IRandomSource` + `SystemRandomSource`, `MatchResult` + `AbandonmentCause`.
+  - `OnlineMatch`:
+    - timer autoritativo con `Tick()`;
+    - `ChooseAutomaticMove`: al azar entre las legales que no ganan, simuladas con `RulesEngine.Apply`, sin tocar el Core; si todas ganan, cualquiera;
+    - modo ausente y cuenta de vencimientos consecutivos; el 3.º abandona sin jugar;
+    - "Salir" con `Forfeit`/`ForfeitAck` y espera acotada;
+    - `NotifyPeerGone`: gracia de 5 s en el host, conexión perdida en el cliente;
+    - timeout de propuesta en el cliente;
+    - descarte de envíos a un dispositivo ya caído.
+  - `MatchFlow`:
+    - tick por frame y `SetTimeSources` para tests;
+    - `LastResult` pasa a `MatchResult`;
+    - `ExitMatch` online con "Saliendo..." (ocupado) hasta el ack;
+    - distinción entre salida del rival en partida, en un resultado por abandono (la pantalla se queda) o en un resultado de tablero ("El rival salió");
+    - `SessionFailure.ConnectionLost`.
+- **Net:** `NgoMatchTransport` serializa los campos nuevos y expone `PeerDisconnected` desde `OnClientDisconnectCallback`.
+- **UI:**
+  - `GameHud`: cuenta regresiva "0:23" en otro color si el jugador del turno está ausente, " · ausente" junto al contador y "Saliendo...". Sin polling: reacciona a eventos del segundo mostrado y del timer.
+  - `ResultScreen`: "Ganaste: el rival abandonó" / "Perdiste: 3 turnos sin jugar", y revancha deshabilitada sin rival.
+- **Builder:** `TurnTimerLabel` en el HUD y `GameHud` conectado a `MatchFlow`; idempotente.
+- **CLAUDE.md:** regla 6 reescrita con la redacción de Cami, y el árbol de carpetas suma `Tests/PlayMode/`.
+- **Tests nuevos:**
+  - `OnlineRobustnessTests` (10, transporte en memoria y reloj manual):
+    - vencimiento con jugada automática igual en ambos lados;
+    - la jugada automática nunca elige la ganadora (probado con todos los valores del azar) y, si todas ganan, elige una;
+    - modo ausente con turnos de 10 s hasta la jugada propia;
+    - 3.er vencimiento: abandono sin jugada automática;
+    - "Salir" con ack y sin ack;
+    - caída del host;
+    - caída del cliente, con gracia de 5 s;
+    - propuesta sin respuesta.
+  - `OnlineTimerConfigTests` (2): valores de GDD §9.
+  - `OnlineMatchFlowTests`: nuevo test de cuenta regresiva y ausente en el HUD. Se adaptaron tres existentes:
+    - "Salir" ahora muestra "Saliendo..." y es derrota;
+    - la caída del cliente en la revancha termina en "Ganaste: el rival abandonó";
+    - la caída del host muestra "Se perdió la conexión".
+
+**Revisión humana:**
+- Timer fuera del Core: el `RulesEngine` nunca lee esos parámetros, así que no van en `GameConfig`. Cami reescribió la regla 6 del CLAUDE.md, que era la que decía lo contrario, y pidió sumar `Tests/PlayMode/` al árbol.
+- Aprobado que el 3.er vencimiento no juegue al azar.
+- Regla nueva (GDD §3.5): la jugada automática nunca gana, salvo que todas las legales ganen, para que un ausente no gane sin jugar. Con test.
+- Aprobado el ack de hasta 2 s para "Salir", mostrando "Saliendo...".
+- Desconexión explícita del cliente: gracia corta de 5 s y abandono, sin esperar los 3 vencimientos (unos 50 s que no esperan a nadie, porque no hay reconexión). Los vencimientos quedan para el rival conectado que no juega.
+
+**Verificación:**
+- Compila sin errores.
+- EditMode 34/34. PlayMode 58/58 vía MCP (45 anteriores + 10 de robustez + 2 de config + 1 de HUD).
+- Builder corrido 2 veces sin duplicados.
+- Primera corrida de PlayMode: 55/56. El test del host terminaba con `LogAssert.NoUnexpectedReceived()` y ahora hay un warning intencional al vencer la gracia; se declaró como esperado (`LogAssert.Expect`). No era un bug de juego.
+- Los errores que quedan en consola después de la suite los generan los tests de desync y del código `AB12CD` a propósito.
+- **Pendiente (Cami), dos dispositivos, uno en wifi y otro con datos móviles:**
+  - dejar vencer un turno (jugada automática y "ausente");
+  - volver a jugar y salir del modo ausente;
+  - abandonar con "Salir" ("Saliendo..." en uno, "Ganaste: el rival abandonó" en el otro);
+  - cerrar la app del cliente a mitad de partida y ver al host ganar por abandono tras unos 5 s.
+
+**Pendientes y límites conocidos:**
+- La cuenta regresiva del cliente no compensa latencia: puede mostrar unos milisegundos de más. Solo el host decide.
+- Carrera aceptada: si el timer del host vence mientras viaja una propuesta del cliente, gana el timer y la propuesta llega fuera de turno, así que se rechaza.
+- Sin reconexión en el MVP.
+
+**Aprendizajes:**
+- Una regla del CLAUDE.md puede estar mal escrita: la regla 6 empujaba a poner en el Core parámetros que el Core no usa. Seguirla al pie de la letra llevó a la primera propuesta; Cami corrigió la regla, no solo el plan.
+- Separar "desconectado" de "conectado pero no juega" cambia bastante la experiencia (5 s contra unos 50 s de espera) y no se ve si se modela todo como vencimientos.
+
+**Bug en investigación (reportado por Cami tras probar la iteración 2 en dos celulares):**
+- **Síntoma:** en la primera sala que se crea, el cliente se queda en la sala de espera mientras al host le arranca la partida. Pasó dos veces, con los dos celulares en wifi.
+- **Otro error, aparte:** en una prueba celular (iteración 2) contra editor (iteración 3), el editor tiró `OverflowException: Reading past the end of the buffer` en `NgoMatchTransport.OnNamedMessage`. Es compatible con la diferencia de tamaño del mensaje entre versiones (19 contra 25 bytes), sin probar; no se pudo atar a la línea exacta.
+- **Lo confirmado en el código de NGO 2.13.3:**
+  - un mensaje con nombre que llega sin handler registrado se descarta en silencio;
+  - el cliente registra su handler dentro de `StartClient()`, antes de conectar;
+  - con scene management activo, el host recibe "cliente conectado" recién después de que el cliente sincronizó escenas;
+  - la escena activa no se recarga al sincronizar.
+  - Con eso, la carrera obvia no debería ocurrir: **causa no determinada**.
+- **Hipótesis abiertas:**
+  - se pierde el único `StartMatch` que manda el host, sin reintento;
+  - el primer join en frío supera el timeout de 15 s.
+- **Paso 1 (hecho):** logs de diagnóstico sin cambio de comportamiento. `NetDiagnostics.Log` con prefijo `Tic-Tac-Fade [net t=…]`, en:
+  - handler registrado, conectado y desconectado;
+  - enviado y recibido, este último con si se entregó o quedó en el buffer;
+  - apertura y cierre del transporte;
+  - `StartMatch` enviado y procesado, y el paso del flujo a Playing;
+  - duración de crear y unirse.
+- La suite de PlayMode los apaga, con un `SetUpFixture`: `LogAssert.NoUnexpectedReceived()` también cuenta los `Log` normales, y cinco tests fallaron hasta que se apagaron.
+- Verificado en el editor contra el servicio real: crear sala → cerrar → crear otra vez deja la secuencia completa en el log. PlayMode 58/58.
+- **Paso 2 (pendiente, Cami):** APK con el mismo código.
+  - Celular host + editor cliente, luego al revés, luego dos celulares con `adb logcat -s Unity`.
+  - Arrancar en frío antes de cada intento.
+  - Anotar qué pantalla queda en el cliente.
+- **Paso 3 (propuesto, pendiente de aprobación):** handshake `Ready` del cliente con reenvío, versión de protocolo con mensaje claro, lectura tolerante de mensajes de otro tamaño y tests con el transporte en memoria.
 
 **Commit(s):** — (sin commitear; Cami revisa y commitea).
 

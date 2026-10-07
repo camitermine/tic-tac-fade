@@ -24,6 +24,31 @@ namespace TicTacFade.Game
 
         /// <summary>Either way: position keys differ; the match is cut.</summary>
         Desync = 7,
+
+        /// <summary>
+        /// Host → client: a turn started. <see cref="MatchMessage.Player"/> moves,
+        /// <see cref="MatchMessage.DurationMs"/> is its time, <see cref="MatchMessage.AbsentFlags"/>
+        /// who is absent. Only for display: the host alone decides expiry.
+        /// </summary>
+        TurnTimer = 8,
+
+        /// <summary>Host → client: <see cref="MatchMessage.Player"/> abandoned (<see cref="MatchMessage.Cause"/>).</summary>
+        Abandoned = 9,
+
+        /// <summary>Either way: the sender pressed "Salir" and loses the match.</summary>
+        Forfeit = 10,
+
+        /// <summary>Either way: the Forfeit was received; the sender may close the session.</summary>
+        ForfeitAck = 11,
+    }
+
+    /// <summary>Bits of <see cref="MatchMessage.AbsentFlags"/>.</summary>
+    public static class AbsentFlags
+    {
+        public const byte X = 1 << 0;
+        public const byte O = 1 << 1;
+
+        public static byte For(Occupant player) => player == Occupant.X ? X : player == Occupant.O ? O : (byte)0;
     }
 
     /// <summary>
@@ -39,9 +64,13 @@ namespace TicTacFade.Game
         public int MoveNumber { get; }
         public ulong PositionKey { get; }
         public MoveRejectionReason RejectionReason { get; }
+        public int DurationMs { get; }
+        public byte AbsentFlags { get; }
+        public AbandonmentCause Cause { get; }
 
         public MatchMessage(MatchMessageKind kind, Occupant player = Occupant.None, int cellIndex = -1,
-            int moveNumber = 0, ulong positionKey = 0, MoveRejectionReason rejectionReason = default)
+            int moveNumber = 0, ulong positionKey = 0, MoveRejectionReason rejectionReason = default,
+            int durationMs = 0, byte absentFlags = 0, AbandonmentCause cause = AbandonmentCause.None)
         {
             Kind = kind;
             Player = player;
@@ -49,6 +78,9 @@ namespace TicTacFade.Game
             MoveNumber = moveNumber;
             PositionKey = positionKey;
             RejectionReason = rejectionReason;
+            DurationMs = durationMs;
+            AbsentFlags = absentFlags;
+            Cause = cause;
         }
 
         public Move Move => new Move(Player, CellIndex);
@@ -71,5 +103,15 @@ namespace TicTacFade.Game
         public static MatchMessage RematchRequest() => new MatchMessage(MatchMessageKind.RematchRequest);
 
         public static MatchMessage Desync() => new MatchMessage(MatchMessageKind.Desync);
+
+        public static MatchMessage TurnTimer(Occupant player, int moveNumber, int durationMs, byte absentFlags) =>
+            new MatchMessage(MatchMessageKind.TurnTimer, player, moveNumber: moveNumber, durationMs: durationMs, absentFlags: absentFlags);
+
+        public static MatchMessage Abandoned(Occupant abandoner, AbandonmentCause cause) =>
+            new MatchMessage(MatchMessageKind.Abandoned, abandoner, cause: cause);
+
+        public static MatchMessage Forfeit() => new MatchMessage(MatchMessageKind.Forfeit);
+
+        public static MatchMessage ForfeitAck() => new MatchMessage(MatchMessageKind.ForfeitAck);
     }
 }

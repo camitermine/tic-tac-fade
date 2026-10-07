@@ -7,8 +7,11 @@ namespace TicTacFade.PlayModeTests
 {
     /// <summary>
     /// One side of an online match without a scene or UI: a GameManager
-    /// (MVP config) plus an <see cref="OnlineMatch"/> on a transport. Starts
-    /// the local match when the OnlineMatch asks, the way MatchFlow does.
+    /// (MVP config, including the online timer) plus an
+    /// <see cref="OnlineMatch"/> on a transport, a manual clock and a
+    /// controllable random source. Starts the local match when the
+    /// OnlineMatch asks and records abandonment/connection events, the way
+    /// MatchFlow would react to them.
     /// </summary>
     public sealed class OnlineTestDevice
     {
@@ -17,7 +20,11 @@ namespace TicTacFade.PlayModeTests
         public OnlineMatch Match { get; }
         public GameState State => GameManager.CurrentState;
 
-        public OnlineTestDevice(string name, IMatchTransport transport)
+        public MatchResult AbandonResult { get; private set; }
+        public bool ConnectionLost { get; private set; }
+        public bool ForfeitCompleted { get; private set; }
+
+        public OnlineTestDevice(string name, IMatchTransport transport, IClock clock, IRandomSource random = null)
         {
             GameObject = new GameObject(name);
             GameManager = GameObject.AddComponent<GameManager>();
@@ -27,8 +34,12 @@ namespace TicTacFade.PlayModeTests
                 .GetField("config", BindingFlags.Instance | BindingFlags.NonPublic)
                 .SetValue(GameManager, config);
 
-            Match = new OnlineMatch(GameManager, transport);
+            Match = new OnlineMatch(GameManager, transport, GameManager.OnlineTimerConfig,
+                OnlineNetworkSettings.Default(), clock, random ?? new FixedRandomSource());
             Match.MatchStartRequested += startingPlayer => GameManager.StartNewGame(startingPlayer);
+            Match.Abandoned += result => AbandonResult = result;
+            Match.ConnectionLost += () => ConnectionLost = true;
+            Match.ForfeitCompleted += () => ForfeitCompleted = true;
         }
 
         /// <summary>A confirmed tap on this device (what BoardView's second tap does).</summary>

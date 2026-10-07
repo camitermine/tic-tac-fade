@@ -153,6 +153,8 @@ namespace TicTacFade.EditorTools
             SetPrivateField(gameHud, "countLabelX", hud.Find("CountsRow/CountX").GetComponent<Text>());
             SetPrivateField(gameHud, "countLabelO", hud.Find("CountsRow/CountO").GetComponent<Text>());
             SetPrivateField(gameHud, "fadeWarningLabel", hud.Find("FadeWarning").GetComponent<Text>());
+            SetPrivateField(gameHud, "turnTimerLabel", hud.Find("TurnTimerLabel").GetComponent<Text>());
+            SetPrivateField(gameHud, "flow", flow);
         }
 
         static void CreateResultScreen(Transform parent, MatchFlow flow)
@@ -506,6 +508,9 @@ namespace TicTacFade.EditorTools
             var turnLayoutElement = turnRT.GetComponent<LayoutElement>();
             turnLayoutElement.preferredHeight = 70f;
             turnLayoutElement.flexibleWidth = 1f;
+
+            // Online turn countdown ("0:23"); empty offline.
+            CreateLabel("TurnTimerLabel", hudRT, string.Empty, 44, Color.white, 60f);
 
             var countsRowRT = CreateUIObject("CountsRow", hudRT, typeof(HorizontalLayoutGroup), typeof(LayoutElement));
             var countsRowLayout = countsRowRT.GetComponent<HorizontalLayoutGroup>();

@@ -76,7 +76,19 @@ Se mantiene la decisión. Cómo quedó implementada y en qué se precisa lo de a
 - **Comparación de hash:** el host manda su `PositionKey.Value` con cada confirmación. El cliente aplica, compara y devuelve un `Ack` con su clave, y el host también compara. Ante cualquier diferencia: `Debug.LogError`, `Desync` al otro lado, se cierra la sesión y ambos vuelven al menú. Nunca se sigue jugando desincronizados.
 - **Arranque:** lo dispara la conexión de Netcode (`OnClientConnectedCallback` en el host), no el join de lobby, porque antes de eso no se pueden mandar mensajes.
 - **Símbolos:** el host es siempre X y el cliente siempre O (GDD §3.1). La revancha requiere el pedido de los dos; el host la anuncia con `StartMatch` invirtiendo quién empieza.
-- **Pendiente (iteración 3):** si una propuesta del cliente no recibe `Confirmed` ni `Rejected` (host caído), `OnlineLocalPlayer` queda esperando con el input bloqueado. Se resuelve junto con desconexiones y timer.
+- ~~Pendiente (iteración 3): si una propuesta del cliente no recibe `Confirmed` ni `Rejected` (host caído), `OnlineLocalPlayer` queda esperando con el input bloqueado.~~ Resuelto en la iteración 3 (ver abajo).
+
+## Implementación (actualizado 2026-09-23, online iteración 3: timer, abandono y desconexiones)
+
+- **Timer autoritativo del host:** al empezar cada turno el host fija el vencimiento y lo anuncia con `TurnTimer` (jugador, duración en ms, quién está ausente). El cliente solo muestra la cuenta regresiva desde que recibe el aviso, sin compensar latencia; nunca decide un vencimiento. Al vencer, el host elige la jugada automática y la difunde como un `Confirmed` más, así que el cliente no necesita lógica aparte para aplicarla.
+- **Tiempo y azar inyectados** (`IClock`, `IRandomSource`, en Game): `OnlineMatch` no lee el reloj de Unity ni `System.Random` directamente. `MatchFlow` lo avanza con `Tick()` una vez por frame. Los tests usan un reloj manual.
+- **Parámetros:** los del timer (`OnlineTimerConfig`: 30 s, 10 s, 3 vencimientos) son de juego, viven en Game y se editan en `GameConfigAsset`. El Core no los tiene, porque el `RulesEngine` nunca los lee (CLAUDE.md regla 6, reescrita en esta iteración). Las esperas de red (`OnlineNetworkSettings`: 10 s sin respuesta a una propuesta, 2 s para el ack de "Salir", 5 s de gracia tras una desconexión) son `SerializeField` de `MatchFlow`.
+- **Abandono como resultado de partida, no regla del tablero:** `MatchResult` (Game) envuelve el `GameEndedEvent` del Core o un abandono con su causa (`Timeouts`, `Quit`, `Disconnected`). `GameManager.Halt()` congela la partida sin tocar el `GameState`. El Core no cambió.
+- **Mensajes nuevos** (mismo mensaje con nombre, `ReliableSequenced`): `TurnTimer`, `Abandoned` (perdedor y causa, host → cliente), `Forfeit` y `ForfeitAck` (en ambos sentidos). `MatchMessage` suma `DurationMs`, `AbsentFlags` y `Cause`.
+- **"Salir" con confirmación:** quien sale manda `Forfeit` y espera `ForfeitAck` (hasta 2 s) antes de cerrar la sesión. Si la cerrara enseguida, el apagado de la red podría descartar el aviso. Sin ack, cierra igual y el otro lado cae en el caso de desconexión.
+- **Detección de desconexión:** `IMatchTransport.PeerDisconnected`, que en `NgoMatchTransport` sale de `OnClientDisconnectCallback`. También cuentan los eventos de sesión (`PlayerHasLeft` en el host, `Deleted`/`RemovedFromSession` en el cliente). Los dos caminos terminan en `OnlineMatch.NotifyPeerGone()`, que es idempotente.
+  - Cliente caído en partida: el host espera una gracia de 5 s y después el cliente pierde por abandono. Los 3 vencimientos quedan para el rival conectado que no juega.
+  - Host caído en partida, o propuesta sin respuesta en 10 s: el cliente vuelve al menú con "Se perdió la conexión con el rival".
 
 ## Referencias
 

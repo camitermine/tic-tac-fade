@@ -33,11 +33,20 @@ namespace TicTacFade.Game
         bool _isAdvancingTurns;
 
         /// <summary>
+        /// The match was stopped from outside the rules (an online
+        /// abandonment): the state stays visible but nothing else is played.
+        /// </summary>
+        public bool IsHalted { get; private set; }
+
+        /// <summary>Online turn-timer parameters, edited in the same asset as the board rules.</summary>
+        public OnlineTimerConfig OnlineTimerConfig => config.ToOnlineTimerConfig();
+
+        /// <summary>
         /// Whether a board tap on this device can play right now: a match in
         /// progress and the current side's controller taking input.
         /// </summary>
         public bool CanAcceptLocalInput =>
-            CurrentState != null && !CurrentState.IsOver && CurrentPlayerController.AcceptsLocalInput;
+            CurrentState != null && !CurrentState.IsOver && !IsHalted && CurrentPlayerController.AcceptsLocalInput;
 
         /// <summary>Whether a human on this device controls that side.</summary>
         public bool IsLocalHuman(Occupant player) => ControllerFor(player).IsLocalHuman;
@@ -90,6 +99,7 @@ namespace TicTacFade.Game
         /// </summary>
         public void StartNewGame(Occupant startingPlayer)
         {
+            IsHalted = false;
             CurrentState = GameState.CreateInitial(config.ToGameConfig(), startingPlayer);
             StateChanged?.Invoke(CurrentState);
             AdvanceTurns();
@@ -103,6 +113,19 @@ namespace TicTacFade.Game
         public void DiscardMatch()
         {
             CurrentState = null;
+            IsHalted = false;
+        }
+
+        /// <summary>
+        /// Freezes the match without ending it in Core terms: abandonment is
+        /// a match result, not a board rule, so the GameState is untouched
+        /// and stays visible. No more input or moves until StartNewGame.
+        /// </summary>
+        public void Halt()
+        {
+            if (IsHalted) return;
+            IsHalted = true;
+            LocalInputAvailabilityChanged?.Invoke();
         }
 
         /// <summary>
@@ -123,6 +146,11 @@ namespace TicTacFade.Game
 
         void OnMoveChosen(Move move)
         {
+            if (IsHalted)
+            {
+                Debug.LogWarning($"Tic-Tac-Fade: move {move.Player}@{move.CellIndex} ignored, the match is halted.");
+                return;
+            }
             ApplyMove(move);
             AdvanceTurns();
         }
