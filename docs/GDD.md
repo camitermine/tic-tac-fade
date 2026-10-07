@@ -1,6 +1,6 @@
 # GDD: Tic-Tac-Fade
 
-**Versión:** 0.8
+**Versión:** 0.10
 **Estado:** MVP v0.1.0
 **Fecha:** Octubre 2026
 **Fuente de verdad:** este archivo (`docs/GDD.md`). Cualquier espejo externo (Google Docs) es secundario.
@@ -19,6 +19,8 @@
 | 0.6 | Sept 2026 | Online: host siempre X y cliente siempre O, revancha alterna quién empieza (§3.1). Jugadas confirmadas por el host, corte de partida ante hash distinto, revancha con pedido de ambos y "El rival salió" (§5). |
 | 0.7 | Sept 2026 | Abandono por 3 vencimientos confirmado; la jugada automática nunca gana y el 3.er vencimiento no juega; "Salir" online es derrota (§3.5). Desconexión del cliente con gracia de 5 s, caída del host y jugada sin respuesta (§5). |
 | 0.8 | Oct 2026 | Mensaje de versión distinta del rival (§5); el arranque de partida online pasa por un handshake Ready. |
+| 0.9 | Oct 2026 | Roadmap: "Opciones de sala" después del modo vs IA (§8). Indicadores sí/no (concreta el "modo memoria" de §4.1), tiempo de turno 10/20/30 s y tope de jugadas según el solver; "Normal" y "Difícil" como presets; la configuración la elige el host y viaja al cliente. |
+| 0.10 | Oct 2026 | Solver resuelto (§8.1): con juego perfecto, quien empieza tiene victoria forzada en 13 jugadas (plies) si abre en un borde; esquina o centro no fuerzan victoria. 116.074 posiciones alcanzables; el tope de 40 no corta ninguna línea forzada desde el inicio. Verificado por un solver independiente en Python (`tools/verify_solver.py`). |
 
 ---
 
@@ -204,11 +206,28 @@ Menú principal
 ## 8. Roadmap post-MVP
 
 1. **Solver por análisis retrógrado.** Unos 120 mil estados en 3x3 con buffer 3. Responde si el juego es victoria forzada para el primero o empate con juego perfecto, y alimenta la IA.
+   - **Resuelto (2026-10-07):** con juego perfecto, **quien empieza tiene victoria forzada en 13 jugadas** (plies).
+     - La victoria forzada exige abrir en un borde (1, 3, 5 o 7). Abriendo en una esquina o en el centro, ninguno puede forzarla.
+     - Hay 116.074 posiciones alcanzables.
+     - El tope de 40 no corta ninguna línea forzada desde el inicio: la más larga, desde cualquier posición alcanzable, mide 17.
+     - Detalle en `docs/solver-results.md`; criterio en `docs/adr/0004-solver-assembly.md`.
 2. **Modo vs IA**, con dificultades basadas en el solver más ruido.
-3. **Build WebGL** en itch.io.
-4. **Tablero 4x4** y variantes de `BufferSize` / `WinLength`.
-5. **Arte y audio.**
-6. **Roguelike:**
+3. **Opciones de sala.** Opciones independientes que elige el host al crear la sala:
+   - **Indicadores de desvanecimiento:** sí / no.
+   - **Tiempo de turno:** 10 / 20 / 30 s.
+   - **Tope de jugadas:** valores a definir con los resultados del solver (ítem 1).
+   - **Presets:** "Normal" y "Difícil" son presets que configuran esas opciones, no modos con reglas propias.
+   - **Sin indicadores** significa ocultar toda la información de qué ficha se va. Esto concreta el "modo memoria" previsto en §4.1. Se ocultan:
+     - la opacidad por vida;
+     - el badge de vida 1;
+     - la marca de la *ghost piece* sobre la ficha propia;
+     - los contadores de fichas;
+     - el aviso de desvanecimiento.
+   - **Sincronización:** el host elige y la configuración viaja al cliente en el protocolo. El tope de jugadas es una regla del Core, así que tiene que ser idéntico en ambos lados.
+4. **Build WebGL** en itch.io.
+5. **Tablero 4x4** y variantes de `BufferSize` / `WinLength`.
+6. **Arte y audio.**
+7. **Roguelike:**
    - Fichas especiales: pesadas (duran más), bomba, ancla.
    - Reliquias y pasivas: buffer variable, alterar el orden de desvanecimiento, robar turnos.
    - PvE con jefes y casillas con peligros.
