@@ -80,18 +80,18 @@ namespace TicTacFade.PlayModeTests
         }
 
         [Test]
-        public void StartMatchArrivesBeforeClientIsReady_BufferedAndProcessedOnStart()
+        public void ClientReadyArrivesBeforeHostListens_BufferedAndMatchStartsOnHostStart()
         {
-            _host.Match.Start();
-            _hostTransport.ConnectPeer();
-            Pump(); // StartMatch reaches the client before its OnlineMatch listens
+            _client.Match.Start(); // sends Ready
+            Pump(); // Ready reaches the host before its OnlineMatch listens
 
-            Assert.IsNull(_client.State, "The client must not start until its flow is ready.");
-            Assert.IsNotNull(_host.State);
+            Assert.IsNull(_host.State, "Neither side starts before the host processes the Ready.");
+            Assert.IsNull(_client.State);
 
-            _client.Match.Start(); // opens the transport: the buffered StartMatch is processed now
+            _host.Match.Start(); // opens the transport: the buffered Ready starts the match
+            Pump();
 
-            Assert.IsNotNull(_client.State, "The buffered StartMatch must start the client's match.");
+            Assert.IsNotNull(_client.State, "The host's StartMatch must start the client's match.");
             Assert.AreEqual(Occupant.X, _client.State.CurrentPlayer);
             AssertIdentical();
 
@@ -176,7 +176,6 @@ namespace TicTacFade.PlayModeTests
         {
             _host.Match.Start();
             _client.Match.Start();
-            _hostTransport.ConnectPeer();
             Pump();
         }
 

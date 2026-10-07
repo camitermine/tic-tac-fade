@@ -16,13 +16,18 @@ namespace TicTacFade.Game
         /// <summary>Host: grace after the network reports the client gone, before it loses by abandonment.</summary>
         public float DisconnectGraceSeconds { get; }
 
-        public OnlineNetworkSettings(float proposalResponseTimeoutSeconds, float forfeitAckTimeoutSeconds, float disconnectGraceSeconds)
+        /// <summary>Client: how often Ready is resent until the first StartMatch arrives.</summary>
+        public float ReadyResendIntervalSeconds { get; }
+
+        public OnlineNetworkSettings(float proposalResponseTimeoutSeconds, float forfeitAckTimeoutSeconds,
+            float disconnectGraceSeconds, float readyResendIntervalSeconds)
         {
             ProposalResponseTimeoutSeconds = proposalResponseTimeoutSeconds;
             ForfeitAckTimeoutSeconds = forfeitAckTimeoutSeconds;
             DisconnectGraceSeconds = disconnectGraceSeconds;
+            ReadyResendIntervalSeconds = readyResendIntervalSeconds;
         }
 
-        public static OnlineNetworkSettings Default() => new OnlineNetworkSettings(10f, 2f, 5f);
+        public static OnlineNetworkSettings Default() => new OnlineNetworkSettings(10f, 2f, 5f, 1f);
     }
 }

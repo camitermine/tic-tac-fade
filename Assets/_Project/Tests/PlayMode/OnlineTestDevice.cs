@@ -23,6 +23,10 @@ namespace TicTacFade.PlayModeTests
         public MatchResult AbandonResult { get; private set; }
         public bool ConnectionLost { get; private set; }
         public bool ForfeitCompleted { get; private set; }
+        public bool VersionMismatch { get; private set; }
+
+        /// <summary>How many times the OnlineMatch asked to start a match on this device.</summary>
+        public int MatchStarts { get; private set; }
 
         public OnlineTestDevice(string name, IMatchTransport transport, IClock clock, IRandomSource random = null)
         {
@@ -36,7 +40,12 @@ namespace TicTacFade.PlayModeTests
 
             Match = new OnlineMatch(GameManager, transport, GameManager.OnlineTimerConfig,
                 OnlineNetworkSettings.Default(), clock, random ?? new FixedRandomSource());
-            Match.MatchStartRequested += startingPlayer => GameManager.StartNewGame(startingPlayer);
+            Match.MatchStartRequested += startingPlayer =>
+            {
+                MatchStarts++;
+                GameManager.StartNewGame(startingPlayer);
+            };
+            Match.VersionMismatch += () => VersionMismatch = true;
             Match.Abandoned += result => AbandonResult = result;
             Match.ConnectionLost += () => ConnectionLost = true;
             Match.ForfeitCompleted += () => ForfeitCompleted = true;

@@ -1,8 +1,8 @@
 # GDD: Tic-Tac-Fade
 
-**Versión:** 0.4
-**Estado:** MVP definido — pre-producción
-**Fecha:** Septiembre 2026
+**Versión:** 0.8
+**Estado:** MVP implementado — en verificación en dispositivos
+**Fecha:** Octubre 2026
 **Fuente de verdad:** este archivo (`docs/GDD.md`). Cualquier espejo externo (Google Docs) es secundario.
 
 ---
@@ -18,6 +18,7 @@
 | 0.5 | Sept 2026 | Regla explícita de quién empieza una partida iniciada desde el menú (§3.1). Flujo de pantallas completo con alcance MVP / posterior y decisión de "Crear sala" sin pantalla de configuración (§4.3). |
 | 0.6 | Sept 2026 | Online: host siempre X y cliente siempre O, revancha alterna quién empieza (§3.1). Jugadas confirmadas por el host, corte de partida ante hash distinto, revancha con pedido de ambos y "El rival salió" (§5). |
 | 0.7 | Sept 2026 | Abandono por 3 vencimientos confirmado; la jugada automática nunca gana y el 3.er vencimiento no juega; "Salir" online es derrota (§3.5). Desconexión del cliente con gracia de 5 s, caída del host y jugada sin respuesta (§5). |
+| 0.8 | Oct 2026 | Mensaje de versión distinta del rival (§5); el arranque de partida online pasa por un handshake Ready. |
 
 ---
 
@@ -168,6 +169,7 @@ Menú principal
   - Si se cae el **host**, el cliente vuelve al menú con "Se perdió la conexión con el rival".
   - Si una jugada del cliente no recibe respuesta del host en 10 s, se desbloquea el input y se trata como caída del host.
   - La gracia de 5 s y la espera de 10 s son parámetros de red de la capa Game, no reglas de juego.
+- **Versión distinta (v0.8):** si los dos dispositivos tienen versiones del juego que no se entienden entre sí, ninguno arranca la partida y los dos vuelven al menú con "El rival tiene otra versión del juego".
 
 ---
 

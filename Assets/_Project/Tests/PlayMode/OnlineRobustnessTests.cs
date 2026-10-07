@@ -33,7 +33,6 @@ namespace TicTacFade.PlayModeTests
 
             _host.Match.Start();
             _client.Match.Start();
-            _hostTransport.ConnectPeer();
             Pump();
         }
 

@@ -103,7 +103,7 @@ namespace TicTacFade.PlayModeTests
         }
 
         [UnityTest]
-        public IEnumerator Client_BufferedStartThenHostClosesRoom_ShowsOpponentLeft()
+        public IEnumerator Client_ReadyHandshakeThenHostClosesRoom_ShowsOpponentLeft()
         {
             yield return LoadSceneAsClient();
 
@@ -209,6 +209,40 @@ namespace TicTacFade.PlayModeTests
             Assert.AreEqual(1, _session.LeaveCalls);
         }
 
+        [UnityTest]
+        public IEnumerator Host_ClientWithOtherProtocolVersion_BothLeaveWithVersionMessage()
+        {
+            yield return LoadScene();
+            InMemoryMatchTransport.CreatePair(out _hostTransport, out _clientTransport);
+            _flow.SetMatchTransport(_hostTransport);
+
+            Press("CreateRoomButton");
+            yield return WaitForState(FlowState.Lobby);
+
+            // A client of another version: its Ready only shares the stable header.
+            LogAssert.Expect(LogType.Warning, new Regex("protocol version"));
+            _clientTransport.DeliverRawToPeer(OtherVersionFrame(MatchMessageKind.Ready));
+            Pump();
+            yield return null;
+            Assert.AreEqual(FlowState.Lobby, _flow.State, "The host waits for the client to get the message.");
+            Assert.IsTrue(_hostTransport.Sent.Any(m => m.Kind == MatchMessageKind.VersionMismatch));
+            Assert.IsNull(_gameManager.CurrentState, "No match may start with another version.");
+
+            // The client answers before leaving: now the host leaves too.
+            _clientTransport.DeliverRawToPeer(OtherVersionFrame(MatchMessageKind.VersionMismatch));
+            Pump();
+            yield return WaitForState(FlowState.Menu);
+            Assert.AreEqual("El rival tiene otra versión del juego.", FindLabel("MenuStatus").text);
+            Assert.AreEqual(1, _session.LeaveCalls);
+            LogAssert.NoUnexpectedReceived();
+        }
+
+        static byte[] OtherVersionFrame(MatchMessageKind kind)
+        {
+            var otherVersion = (ushort)(MatchMessageCodec.ProtocolVersion + 1);
+            return MatchMessageCodec.Encode(new MatchMessage(kind, protocolVersion: otherVersion));
+        }
+
         // This device hosts; the remote device is the client.
         IEnumerator LoadSceneAsHost()
         {
@@ -220,15 +254,13 @@ namespace TicTacFade.PlayModeTests
             Press("CreateRoomButton");
             yield return WaitForState(FlowState.Lobby);
 
-            _remote.Match.Start();
-            _hostTransport.ConnectPeer();
+            _remote.Match.Start(); // its Ready reaches this host: the match starts
             Pump();
             yield return WaitForState(FlowState.Playing);
         }
 
-        // This device is the client; the remote device hosts. The host's
-        // StartMatch reaches this device before its join finished, so it is
-        // buffered until the flow opens the online match.
+        // This device is the client; the remote device hosts and waits for
+        // this device's Ready, sent when the flow opens the online match.
         IEnumerator LoadSceneAsClient()
         {
             yield return LoadScene();
@@ -237,13 +269,15 @@ namespace TicTacFade.PlayModeTests
             _remote = new OnlineTestDevice("RemoteHostDevice", _hostTransport, _clock);
 
             _remote.Match.Start();
-            _hostTransport.ConnectPeer();
-            Pump(); // StartMatch waits in this device's buffer
+            Pump();
+            Assert.IsNull(_remote.State, "The host must not start before the client's Ready.");
 
             Press("JoinByCodeButton");
             yield return WaitForState(FlowState.JoinByCode);
             FindInput("CodeInput").text = FakeSessionService.FakeCode;
             Press("JoinButton");
+            yield return WaitForState(FlowState.Lobby);
+            Pump(); // Ready → host, StartMatch → this device
             yield return WaitForState(FlowState.Playing);
         }
 

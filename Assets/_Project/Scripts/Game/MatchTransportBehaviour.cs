@@ -11,9 +11,7 @@ namespace TicTacFade.Game
     public abstract class MatchTransportBehaviour : MonoBehaviour, IMatchTransport
     {
         public abstract bool IsHost { get; }
-        public abstract bool IsPeerConnected { get; }
 
-        public abstract event Action PeerConnected;
         public abstract event Action PeerDisconnected;
         public abstract event Action<MatchMessage> MessageReceived;
 

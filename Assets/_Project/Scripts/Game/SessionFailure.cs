@@ -31,5 +31,8 @@ namespace TicTacFade.Game
 
         /// <summary>The host's device dropped during a match (or stopped answering).</summary>
         ConnectionLost = 12,
+
+        /// <summary>The other device runs another protocol version of the game.</summary>
+        VersionMismatch = 13,
     }
 }

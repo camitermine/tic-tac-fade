@@ -675,11 +675,86 @@ El objetivo es que quede visible **qué se le pidió a la IA, qué produjo y qu�
   - duración de crear y unirse.
 - La suite de PlayMode los apaga, con un `SetUpFixture`: `LogAssert.NoUnexpectedReceived()` también cuenta los `Log` normales, y cinco tests fallaron hasta que se apagaron.
 - Verificado en el editor contra el servicio real: crear sala → cerrar → crear otra vez deja la secuencia completa en el log. PlayMode 58/58.
-- **Paso 2 (pendiente, Cami):** APK con el mismo código.
-  - Celular host + editor cliente, luego al revés, luego dos celulares con `adb logcat -s Unity`.
-  - Arrancar en frío antes de cada intento.
-  - Anotar qué pantalla queda en el cliente.
-- **Paso 3 (propuesto, pendiente de aprobación):** handshake `Ready` del cliente con reenvío, versión de protocolo con mensaje claro, lectura tolerante de mensajes de otro tamaño y tests con el transporte en memoria.
+- **Paso 2 (hecho, Cami):** APK con el mismo código en dos celulares. **El bug no se reprodujo.**
+- **Paso 3 (hecho, ver [16]):** arreglo estructural sin causa confirmada: handshake `Ready` con reenvío, número de partida en `StartMatch`, versión de protocolo y lectura tolerante.
+
+**Commit(s):** — (sin commitear; Cami revisa y commitea).
+
+---
+
+## [16] 2026-10-06 — Arranque online: handshake Ready, número de partida y versión de protocolo
+
+**Objetivo:** cerrar el "Bug en investigación" de [15] (el cliente se queda en la sala de espera mientras al host le arranca la partida) con un arreglo que elimine la clase entera de bug.
+- **El bug no se reprodujo:** después de las dos veces iniciales, Cami no lo pudo volver a provocar en dos celulares.
+- **La causa no está confirmada:** se decidió no seguir investigándola y aplicar un arreglo estructural.
+- Si vuelve a aparecer un síntoma parecido, los logs de diagnóstico de [15] siguen en el código, apagados por defecto.
+
+**Pedido / prompt:** paso 3 de [15], con plan aprobado y tres rondas de ajustes de Cami.
+- Handshake `Ready`: el cliente lo reenvía hasta recibir `StartMatch`, y el host arranca con el `Ready`, no con la conexión de Netcode. Un `Ready` duplicado no arranca dos partidas.
+- Versión de protocolo en el primer mensaje, con "El rival tiene otra versión del juego" en ambos lados.
+- Lectura tolerante: un mensaje de tamaño inesperado se descarta con un warning, nunca con una excepción.
+- Tests con el transporte en memoria. Los logs de diagnóstico quedan como están.
+
+**Qué hizo la IA:**
+- **Game:**
+  - **Nuevo `MatchMessageCodec`**, el formato de trama compartido por los dos transportes:
+    - cabecera fija `kind`+versión, 31 bytes en total;
+    - `TryDecode` nunca lanza;
+    - una trama de otra versión se decodifica solo por la cabecera, y el resto de lo inválido se descarta con un warning.
+  - **`MatchMessage`:** kinds `Ready` (12) y `VersionMismatch` (13), y campos `MatchNumber` y `ProtocolVersion`.
+  - **`OnlineMatch`:**
+    - reenvío de `Ready` en `Tick` y arranque del host con el primer `Ready`;
+    - `ResendCurrentStart` ante un `Ready` posterior, con el `TurnTimer` del tiempo restante del host;
+    - el cliente solo acepta el `MatchNumber` que espera;
+    - salida por versión distinta, en la que el host espera la respuesta del cliente hasta 2 s.
+  - **`MatchFlow`:** `readyResendIntervalSeconds` (1 s) y `SessionFailure.VersionMismatch`, que lleva al menú.
+  - Se quitaron `IMatchTransport.PeerConnected` e `IsPeerConnected`.
+- **Net:** `NgoMatchTransport` serializa con el codec y lee exactamente los bytes que llegaron, sin leer más allá del final. Un `Ready` sin conexión se descarta en silencio, solo con `NetDiagnostics.Log`.
+- **UI:** texto "El rival tiene otra versión del juego.".
+- **Tests:**
+  - El transporte en memoria ahora pasa todo por el codec (los mismos bytes que la red) y suma `LoseNextSent`, `SetLinkUp`, `InjectToPeer` y `DeliverRawToPeer`.
+  - **Nuevo `OnlineHandshakeTests` (10):**
+    - `Ready` perdido que se recupera por reenvío;
+    - `Ready` duplicado que no arranca otra partida;
+    - `StartMatch` perdido que se recupera, con la cuenta del cliente igual al tiempo restante del host;
+    - `Ready` duplicado en una revancha que empieza O: el cliente ve 20 s y el host vence el turno cuando la cuenta llega a 0;
+    - `StartMatch` viejo después de una revancha, ignorado;
+    - `Ready` sin conexión como no-op silencioso (sin logs) que se recupera al conectar;
+    - versión distinta en ambos lados;
+    - versión distinta sin respuesta: el host se va a los 2 s;
+    - mensaje truncado descartado sin excepción;
+    - codec: vacío, null, `kind` desconocido e ida y vuelta de todos los campos.
+  - **`OnlineMatchFlowTests`:** test nuevo de versión distinta en la escena (menú con el texto). Se adaptaron los setups (sin `ConnectPeer`, con `Pump` después del join del cliente).
+  - El test del `StartMatch` en el buffer se reemplazó por "el `Ready` llega antes de que el host escuche".
+- **Docs:**
+  - ADR 0002 con sección nueva;
+  - GDD §5 con la línea de versión distinta;
+  - GDD v0.8: fila en el historial y encabezado "MVP implementado — en verificación en dispositivos", a pedido de Cami.
+
+**Revisión humana:**
+- Aprobado responder siempre al `Ready` reenviando el `StartMatch` actual, para que un `StartMatch` perdido no deje al cliente reenviando para siempre.
+- **Ajuste 1:** en vez de un chequeo de "partida en curso", un número de partida en `StartMatch`. El cliente acepta solo el que espera, así que el `Ready` duplicado y la revancha se resuelven con la misma regla. Test de `StartMatch` viejo tras una revancha.
+- **Ajuste 2:** el `Ready` antes de que Netcode conecte debe ser un no-op silencioso, no un warning por segundo. Se verificó en NGO que `SendNamedMessage` no chequea la conexión, así que el guard va en el transporte.
+- **Ajuste 3:** el `TurnTimer` reenviado lleva el tiempo restante, no la duración completa (el caso de la revancha que empieza O). `MatchNumber` pasa a ser un campo propio en vez de reusar `MoveNumber`: con la versión 1 rompiendo compatibilidad, cambiar el formato era gratis.
+
+**Verificación:**
+- Compila sin errores. Los únicos warnings son CS0618 en `SceneWiringAndInputTests`, que ya estaban.
+- EditMode 34/34. PlayMode 69/69 vía MCP (58 anteriores, 10 de handshake y 1 de flujo).
+- En consola quedan solo los errores intencionales de los tests de desync y del código `AB12CD`.
+- **Pendiente (Cami), dos celulares:**
+  - varios arranques en frío creando la primera sala;
+  - opcional: un APK con `ProtocolVersion` cambiado contra uno normal, para ver el mensaje en los dos lados.
+
+**Pendientes y límites conocidos:**
+- **Incompatible con los APKs anteriores:** un host nuevo con un cliente viejo se queda en la sala de espera, porque no le llega ningún `Ready`.
+- El host no tiene timeout si el `Ready` no llega nunca. El usuario puede cancelar desde la sala.
+- **Si el host jugara antes de que el cliente recupere un `StartMatch` perdido**, el cliente recibiría un `Confirmed` sin partida y se detectaría como desync, no en silencio. Con entrega confiable y ordenada no debería pasar.
+- **El guard de `Ready` sin conexión en `NgoMatchTransport` no tiene test automático**, porque necesita red. El test cubre el comportamiento equivalente del transporte en memoria.
+
+**Aprendizajes:**
+- Cuando un bug de red no se reproduce, un protocolo que se recupera solo (reenvío idempotente con números de secuencia) es más barato que seguir buscando una carrera que quizá no vuelva a pasar.
+- Un número monótono en el mensaje resuelve con una sola regla casos que con flags necesitaban razonar sobre el momento en que se limpian.
+- Reenviar un estado con tiempo (el timer) obliga a mandar lo que queda, no lo que había al principio. Lo detectó la revisión humana, no el plan.
 
 **Commit(s):** — (sin commitear; Cami revisa y commitea).
 

@@ -6,30 +6,41 @@ namespace TicTacFade.PlayModeTests
 {
     /// <summary>
     /// Network-free <see cref="IMatchTransport"/> pair for tests. Sent
-    /// messages are queued, in order, and only delivered on
-    /// <see cref="Pump"/>, which models the real transport: delivery is
-    /// asynchronous but reliable and sequenced. Like the real one, a closed
-    /// endpoint buffers what it receives until <see cref="Open"/>.
+    /// messages are encoded with <see cref="MatchMessageCodec"/> and queued,
+    /// in order, and only decoded and delivered on <see cref="Pump"/>, which
+    /// models the real transport: delivery is asynchronous but reliable and
+    /// sequenced, and the receiver decodes the same bytes the network would
+    /// carry. Like the real one, a closed endpoint buffers what it receives
+    /// until <see cref="Open"/>.
     /// </summary>
     public sealed class InMemoryMatchTransport : IMatchTransport
     {
-        readonly Queue<MatchMessage> _inFlight = new Queue<MatchMessage>();
+        readonly Queue<byte[]> _inFlight = new Queue<byte[]>();
         readonly Queue<MatchMessage> _inbox = new Queue<MatchMessage>();
         InMemoryMatchTransport _peer;
         bool _open;
-        bool _peerConnected;
         bool _dead;
         bool _ignoresIncoming;
+        bool _linkUp = true;
+        int _sendsToLose;
 
         public bool IsHost { get; }
-        public bool IsPeerConnected => IsHost && _peerConnected;
 
-        /// <summary>Every message this endpoint sent, for assertions.</summary>
+        /// <summary>Every message this endpoint sent, for assertions (also the lost ones).</summary>
         public List<MatchMessage> Sent { get; } = new List<MatchMessage>();
 
-        public event Action PeerConnected;
         public event Action PeerDisconnected;
         public event Action<MatchMessage> MessageReceived;
+
+        InMemoryMatchTransport(bool isHost) => IsHost = isHost;
+
+        public static void CreatePair(out InMemoryMatchTransport host, out InMemoryMatchTransport client)
+        {
+            host = new InMemoryMatchTransport(isHost: true);
+            client = new InMemoryMatchTransport(isHost: false);
+            host._peer = client;
+            client._peer = host;
+        }
 
         /// <summary>
         /// This device drops off the network: nothing in flight arrives,
@@ -50,28 +61,33 @@ namespace TicTacFade.PlayModeTests
         /// </summary>
         public void StopResponding() => _ignoresIncoming = true;
 
-        InMemoryMatchTransport(bool isHost) => IsHost = isHost;
+        /// <summary>The next <paramref name="count"/> messages this endpoint sends never arrive.</summary>
+        public void LoseNextSent(int count = 1) => _sendsToLose = count;
 
-        public static void CreatePair(out InMemoryMatchTransport host, out InMemoryMatchTransport client)
-        {
-            host = new InMemoryMatchTransport(isHost: true);
-            client = new InMemoryMatchTransport(isHost: false);
-            host._peer = client;
-            client._peer = host;
-        }
+        /// <summary>
+        /// While down, this endpoint isn't connected yet (a client before
+        /// Netcode connected): what it sends is dropped silently, like
+        /// <c>NgoMatchTransport</c> does with a Ready.
+        /// </summary>
+        public void SetLinkUp(bool up) => _linkUp = up;
 
-        /// <summary>Host side: the client connects (what Netcode's connection callback does).</summary>
-        public void ConnectPeer()
-        {
-            _peerConnected = true;
-            PeerConnected?.Invoke();
-        }
+        /// <summary>Queues a message to the other endpoint as if this one sent it (duplicates, late arrivals).</summary>
+        public void InjectToPeer(MatchMessage message) => _inFlight.Enqueue(MatchMessageCodec.Encode(message));
+
+        /// <summary>Queues raw bytes to the other endpoint (malformed frames, other protocol versions).</summary>
+        public void DeliverRawToPeer(byte[] frame) => _inFlight.Enqueue(frame);
 
         public void Send(MatchMessage message)
         {
             Sent.Add(message);
-            if (!_dead)
-                _inFlight.Enqueue(message);
+            if (_dead || !_linkUp)
+                return;
+            if (_sendsToLose > 0)
+            {
+                _sendsToLose--;
+                return;
+            }
+            _inFlight.Enqueue(MatchMessageCodec.Encode(message));
         }
 
         public void Open()
@@ -90,7 +106,7 @@ namespace TicTacFade.PlayModeTests
         /// <summary>
         /// Delivers everything in flight both ways, including messages sent
         /// while delivering, until both directions are empty. Returns how
-        /// many messages were delivered.
+        /// many frames were delivered (dropped malformed ones included).
         /// </summary>
         public static int Pump(InMemoryMatchTransport a, InMemoryMatchTransport b, int maxMessages = 1000)
         {
@@ -107,10 +123,12 @@ namespace TicTacFade.PlayModeTests
             return delivered;
         }
 
-        void Receive(MatchMessage message)
+        void Receive(byte[] frame)
         {
             if (_dead || _ignoresIncoming)
                 return;
+            if (!MatchMessageCodec.TryDecode(frame, frame.Length, out var message))
+                return; // dropped with a warning, as on the real transport
             if (_open)
                 MessageReceived?.Invoke(message);
             else

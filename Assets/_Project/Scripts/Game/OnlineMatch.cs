@@ -26,6 +26,14 @@ namespace TicTacFade.Game
     /// </list>
     /// The host is always X and the client always O; the first match starts
     /// with X and each rematch swaps who starts (GDD §3.1).
+    /// Start handshake: the client sends Ready (resent periodically) until
+    /// the first StartMatch arrives; the host starts the first match on the
+    /// first Ready, not on the network's connection callback. Every
+    /// StartMatch carries a match number and the client only accepts the
+    /// one it expects, so a repeated Ready, a resent StartMatch or a late
+    /// one from a previous match can never start a second match. A message
+    /// from another protocol version makes both devices leave
+    /// (<see cref="VersionMismatch"/>).
     /// Driven by <see cref="Tick"/> once per frame; time and randomness are
     /// injected (<see cref="IClock"/>, <see cref="IRandomSource"/>).
     /// </summary>
@@ -54,7 +62,9 @@ namespace TicTacFade.Game
         int _lastSecondsShown = -1;
 
         bool _started;
-        bool _firstMatchSent;
+        int _matchNumber;              // host: number of the last StartMatch sent (0 = none yet)
+        int _expectedMatchNumber = 1;  // client: the only StartMatch number it accepts next
+        bool _versionMismatch;
         bool _desynced;
         bool _remoteWantsRematch;
         bool _matchInProgress;
@@ -65,6 +75,8 @@ namespace TicTacFade.Game
         double _proposalSentAt = double.NaN;        // client
         double _disconnectGraceEndsAt = double.NaN; // host
         double _forfeitAckDeadline = double.NaN;    // whoever pressed "Salir"
+        double _nextReadyAt = double.NaN;           // client, until the first StartMatch
+        double _versionMismatchDeadline = double.NaN; // host, waiting for the client's VersionMismatch
 
         public bool IsHost => _transport.IsHost;
 
@@ -116,6 +128,9 @@ namespace TicTacFade.Game
         /// <summary>Client: the host is gone during the match (dropped or not answering).</summary>
         public event Action ConnectionLost;
 
+        /// <summary>The other device speaks another protocol version: leave the session.</summary>
+        public event Action VersionMismatch;
+
         /// <summary>A turn countdown started or stopped, or absent mode changed.</summary>
         public event Action TurnTimerChanged;
 
@@ -141,8 +156,9 @@ namespace TicTacFade.Game
         }
 
         /// <summary>
-        /// Starts listening (buffered messages are processed now). On the
-        /// host, the first match starts as soon as the client is connected.
+        /// Starts listening (buffered messages are processed now). The
+        /// client announces it is ready; the host waits for that Ready to
+        /// start the first match.
         /// </summary>
         public void Start()
         {
@@ -150,13 +166,12 @@ namespace TicTacFade.Game
             _started = true;
 
             _transport.MessageReceived += OnMessageReceived;
-            _transport.PeerConnected += OnPeerConnected;
             _transport.PeerDisconnected += NotifyPeerGone;
-            NetDiagnostics.Log($"online match listening as {(IsHost ? "host (X)" : "client (O)")}; peer already connected: {_transport.IsPeerConnected}.");
+            NetDiagnostics.Log($"online match listening as {(IsHost ? "host (X)" : "client (O)")}.");
             _transport.Open();
 
-            if (IsHost && _transport.IsPeerConnected)
-                OnPeerConnected();
+            if (!IsHost && !_versionMismatch) // a buffered message may already have shown another version
+                SendReady();
         }
 
         public void Dispose()
@@ -164,7 +179,6 @@ namespace TicTacFade.Game
             if (!_started) return;
             _started = false;
             _transport.MessageReceived -= OnMessageReceived;
-            _transport.PeerConnected -= OnPeerConnected;
             _transport.PeerDisconnected -= NotifyPeerGone;
             _transport.Close();
         }
@@ -197,6 +211,12 @@ namespace TicTacFade.Game
                 Debug.LogWarning("Tic-Tac-Fade: no ForfeitAck in time; closing the session anyway.");
                 CompleteForfeit();
             }
+
+            if (!IsHost && !double.IsNaN(_nextReadyAt) && now >= _nextReadyAt)
+                SendReady();
+
+            if (!double.IsNaN(_versionMismatchDeadline) && now >= _versionMismatchDeadline)
+                CompleteVersionMismatch(); // the client didn't answer: leave anyway
 
             int seconds = SecondsRemaining;
             if (seconds != _lastSecondsShown)
@@ -254,6 +274,12 @@ namespace TicTacFade.Game
             if (_peerGone) return;
             _peerGone = true;
 
+            if (!double.IsNaN(_versionMismatchDeadline))
+            {
+                CompleteVersionMismatch(); // the client already left
+                return;
+            }
+
             if (!_matchInProgress)
                 return; // after a result: nothing to decide here (no rematch possible now)
 
@@ -263,12 +289,89 @@ namespace TicTacFade.Game
                 LoseConnection();
         }
 
-        void OnPeerConnected()
+        // Client: announces its flow is ready and schedules the next resend.
+        // Before the connection exists the transport drops it silently.
+        void SendReady()
         {
-            NetDiagnostics.Log($"peer connected (host: {IsHost}, first match already sent: {_firstMatchSent}).");
-            if (!IsHost || _firstMatchSent) return;
-            _firstMatchSent = true;
-            BeginMatch(Occupant.X); // first online match: X (the host) starts
+            SendToPeer(MatchMessage.Ready());
+            _nextReadyAt = _clock.Now + _network.ReadyResendIntervalSeconds;
+        }
+
+        // Host: the first Ready starts the first match; any later one gets
+        // the current StartMatch again, never a new match.
+        void OnReadyOnHost()
+        {
+            NetDiagnostics.Log($"host received Ready (last match number sent: {_matchNumber}).");
+            if (_matchNumber == 0)
+                BeginMatch(Occupant.X); // first online match: X (the host) starts
+            else
+                ResendCurrentStart();
+        }
+
+        // Host only: repeats the current StartMatch (the client ignores it if
+        // it already has it) and, during the match, the running turn with the
+        // time left on the host's clock, so the client never shows more time
+        // than it has.
+        void ResendCurrentStart()
+        {
+            NetDiagnostics.Log($"host resending StartMatch #{_matchNumber}.");
+            SendToPeer(MatchMessage.StartMatch(_lastStartingPlayer, _matchNumber));
+
+            var state = _gameManager.CurrentState;
+            if (!_matchInProgress || double.IsNaN(_turnDeadline) || state == null)
+                return;
+
+            int remainingMs = (int)Math.Max(0, Math.Round((_turnDeadline - _clock.Now) * 1000));
+            SendToPeer(MatchMessage.TurnTimer(state.CurrentPlayer, state.TotalMoves, remainingMs, CurrentAbsentFlags()));
+        }
+
+        void OnStartMatchOnClient(MatchMessage message)
+        {
+            if (message.MatchNumber != _expectedMatchNumber)
+            {
+                NetDiagnostics.Log($"client ignoring StartMatch #{message.MatchNumber}; expecting #{_expectedMatchNumber}.");
+                return;
+            }
+
+            NetDiagnostics.Log($"client processing StartMatch #{message.MatchNumber}, {message.Player} first.");
+            _expectedMatchNumber++;
+            _nextReadyAt = double.NaN; // the host knows this device is ready
+            StartLocalMatch(message.Player);
+        }
+
+        // Either side. The first frame from another version starts leaving:
+        // the host tells the client and waits (bounded) for its answer, so
+        // the client sees the version message rather than a closed room; the
+        // client answers and leaves at once.
+        void OnVersionMismatch(MatchMessage message)
+        {
+            if (_versionMismatch)
+            {
+                if (message.Kind == MatchMessageKind.VersionMismatch && !double.IsNaN(_versionMismatchDeadline))
+                    CompleteVersionMismatch();
+                return;
+            }
+
+            _versionMismatch = true;
+            _nextReadyAt = double.NaN;
+            string other = message.ProtocolVersion != MatchMessageCodec.ProtocolVersion
+                ? message.ProtocolVersion.ToString()
+                : "unknown (it reported the mismatch)";
+            Debug.LogWarning($"Tic-Tac-Fade: protocol version mismatch (this device {MatchMessageCodec.ProtocolVersion}, the other {other}); leaving.");
+            if (_matchInProgress)
+                EndMatchLocally();
+            SendToPeer(MatchMessage.VersionMismatch());
+
+            if (IsHost && message.Kind != MatchMessageKind.VersionMismatch && !_peerGone)
+                _versionMismatchDeadline = _clock.Now + _network.ForfeitAckTimeoutSeconds;
+            else
+                CompleteVersionMismatch();
+        }
+
+        void CompleteVersionMismatch()
+        {
+            _versionMismatchDeadline = double.NaN;
+            VersionMismatch?.Invoke();
         }
 
         void TryStartRematch()
@@ -282,8 +385,9 @@ namespace TicTacFade.Game
         // before the TurnTimer and any move.
         void BeginMatch(Occupant startingPlayer)
         {
-            NetDiagnostics.Log($"host starting a match, {startingPlayer} first; sending StartMatch.");
-            SendToPeer(MatchMessage.StartMatch(startingPlayer));
+            _matchNumber++;
+            NetDiagnostics.Log($"host starting match #{_matchNumber}, {startingPlayer} first; sending StartMatch.");
+            SendToPeer(MatchMessage.StartMatch(startingPlayer, _matchNumber));
             StartLocalMatch(startingPlayer);
             StartTurnTimer();
         }
@@ -319,13 +423,21 @@ namespace TicTacFade.Game
 
         void OnMessageReceived(MatchMessage message)
         {
-            if (_desynced) return;
+            if (message.ProtocolVersion != MatchMessageCodec.ProtocolVersion || message.Kind == MatchMessageKind.VersionMismatch)
+            {
+                OnVersionMismatch(message);
+                return;
+            }
+
+            if (_desynced || _versionMismatch) return;
 
             switch (message.Kind)
             {
+                case MatchMessageKind.Ready when IsHost:
+                    OnReadyOnHost();
+                    break;
                 case MatchMessageKind.StartMatch when !IsHost:
-                    NetDiagnostics.Log($"client processing StartMatch, {message.Player} first.");
-                    StartLocalMatch(message.Player);
+                    OnStartMatchOnClient(message);
                     break;
                 case MatchMessageKind.Propose when IsHost:
                     HandleProposal(message.Move, fromRemote: true);
@@ -444,7 +556,7 @@ namespace TicTacFade.Game
             float duration = _absent[IndexOf(player)] ? _timer.AbsentTurnTimeSeconds : _timer.TurnTimeSeconds;
             _turnDeadline = _clock.Now + duration;
 
-            byte flags = (byte)((_absent[0] ? AbsentFlags.X : 0) | (_absent[1] ? AbsentFlags.O : 0));
+            byte flags = CurrentAbsentFlags();
             SendToPeer(MatchMessage.TurnTimer(player, state.TotalMoves, (int)(duration * 1000), flags));
             SetDisplayTimer(_turnDeadline, flags);
         }
@@ -614,6 +726,9 @@ namespace TicTacFade.Game
             player == LocalSymbol ? (IConfirmedMoveReceiver)_localPlayer : _remotePlayer;
 
         static int IndexOf(Occupant player) => player == Occupant.X ? 0 : 1;
+
+        // Host only.
+        byte CurrentAbsentFlags() => (byte)((_absent[0] ? AbsentFlags.X : 0) | (_absent[1] ? AbsentFlags.O : 0));
 
         void SetLocalRematchRequested(bool requested)
         {

@@ -2,9 +2,18 @@ using TicTacFade.Core;
 
 namespace TicTacFade.Game
 {
+    /// <summary>
+    /// The values are part of the wire protocol (<see cref="MatchMessageCodec"/>):
+    /// never renumber them.
+    /// </summary>
     public enum MatchMessageKind : byte
     {
-        /// <summary>Host → client: a match starts; <see cref="MatchMessage.Player"/> starts it.</summary>
+        /// <summary>
+        /// Host → client: match number <see cref="MatchMessage.MatchNumber"/>
+        /// (1 for the first, +1 per rematch) starts; <see cref="MatchMessage.Player"/>
+        /// starts it. The client only accepts the number it expects, so a
+        /// repeated or older StartMatch is ignored.
+        /// </summary>
         StartMatch = 1,
 
         /// <summary>Client → host: a move the client wants to play.</summary>
@@ -40,6 +49,16 @@ namespace TicTacFade.Game
 
         /// <summary>Either way: the Forfeit was received; the sender may close the session.</summary>
         ForfeitAck = 11,
+
+        /// <summary>
+        /// Client → host: this device's flow is ready to play. Resent
+        /// periodically until the first StartMatch arrives; the host answers
+        /// every Ready with the current StartMatch, never a new match.
+        /// </summary>
+        Ready = 12,
+
+        /// <summary>Either way: the other device speaks another protocol version; both leave.</summary>
+        VersionMismatch = 13,
     }
 
     /// <summary>Bits of <see cref="MatchMessage.AbsentFlags"/>.</summary>
@@ -67,10 +86,15 @@ namespace TicTacFade.Game
         public int DurationMs { get; }
         public byte AbsentFlags { get; }
         public AbandonmentCause Cause { get; }
+        public int MatchNumber { get; }
+
+        /// <summary>The sender's protocol version (<see cref="MatchMessageCodec.ProtocolVersion"/> for this build).</summary>
+        public ushort ProtocolVersion { get; }
 
         public MatchMessage(MatchMessageKind kind, Occupant player = Occupant.None, int cellIndex = -1,
             int moveNumber = 0, ulong positionKey = 0, MoveRejectionReason rejectionReason = default,
-            int durationMs = 0, byte absentFlags = 0, AbandonmentCause cause = AbandonmentCause.None)
+            int durationMs = 0, byte absentFlags = 0, AbandonmentCause cause = AbandonmentCause.None,
+            int matchNumber = 0, ushort protocolVersion = MatchMessageCodec.ProtocolVersion)
         {
             Kind = kind;
             Player = player;
@@ -81,12 +105,14 @@ namespace TicTacFade.Game
             DurationMs = durationMs;
             AbsentFlags = absentFlags;
             Cause = cause;
+            MatchNumber = matchNumber;
+            ProtocolVersion = protocolVersion;
         }
 
         public Move Move => new Move(Player, CellIndex);
 
-        public static MatchMessage StartMatch(Occupant startingPlayer) =>
-            new MatchMessage(MatchMessageKind.StartMatch, player: startingPlayer);
+        public static MatchMessage StartMatch(Occupant startingPlayer, int matchNumber) =>
+            new MatchMessage(MatchMessageKind.StartMatch, player: startingPlayer, matchNumber: matchNumber);
 
         public static MatchMessage Propose(Move move) =>
             new MatchMessage(MatchMessageKind.Propose, move.Player, move.CellIndex);
@@ -113,5 +139,9 @@ namespace TicTacFade.Game
         public static MatchMessage Forfeit() => new MatchMessage(MatchMessageKind.Forfeit);
 
         public static MatchMessage ForfeitAck() => new MatchMessage(MatchMessageKind.ForfeitAck);
+
+        public static MatchMessage Ready() => new MatchMessage(MatchMessageKind.Ready);
+
+        public static MatchMessage VersionMismatch() => new MatchMessage(MatchMessageKind.VersionMismatch);
     }
 }

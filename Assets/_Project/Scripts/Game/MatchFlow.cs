@@ -25,6 +25,7 @@ namespace TicTacFade.Game
         [SerializeField] float proposalResponseTimeoutSeconds = 10f;
         [SerializeField] float forfeitAckTimeoutSeconds = 2f;
         [SerializeField] float disconnectGraceSeconds = 5f;
+        [SerializeField] float readyResendIntervalSeconds = 1f;
 
         // Every screen declares explicitly where its cancel/back action goes.
         static readonly Dictionary<FlowState, FlowState[]> AllowedTransitions = new Dictionary<FlowState, FlowState[]>
@@ -448,13 +449,15 @@ namespace TicTacFade.Game
             }
 
             NetDiagnostics.Log($"flow in {State}: opening the online match.");
-            var network = new OnlineNetworkSettings(proposalResponseTimeoutSeconds, forfeitAckTimeoutSeconds, disconnectGraceSeconds);
+            var network = new OnlineNetworkSettings(proposalResponseTimeoutSeconds, forfeitAckTimeoutSeconds,
+                disconnectGraceSeconds, readyResendIntervalSeconds);
             _online = new OnlineMatch(gameManager, _transport, gameManager.OnlineTimerConfig, network, _clock, _random);
             _online.MatchStartRequested += OnOnlineMatchStartRequested;
             _online.LocalRematchRequestedChanged += OnLocalRematchRequestedChanged;
             _online.Desynced += OnDesynced;
             _online.Abandoned += OnAbandoned;
             _online.ConnectionLost += OnConnectionLost;
+            _online.VersionMismatch += OnVersionMismatch;
             _online.TurnTimerChanged += OnTurnTimerChanged;
             _online.SecondsRemainingChanged += OnTurnSecondsChanged;
             _online.Start();
@@ -473,6 +476,7 @@ namespace TicTacFade.Game
             _online.Desynced -= OnDesynced;
             _online.Abandoned -= OnAbandoned;
             _online.ConnectionLost -= OnConnectionLost;
+            _online.VersionMismatch -= OnVersionMismatch;
             _online.TurnTimerChanged -= OnTurnTimerChanged;
             _online.SecondsRemainingChanged -= OnTurnSecondsChanged;
             _online.Dispose();
@@ -521,6 +525,12 @@ namespace TicTacFade.Game
         {
             if (!IsBusy)
                 LeaveOnline(SessionFailure.ConnectionLost);
+        }
+
+        void OnVersionMismatch()
+        {
+            if (!IsBusy)
+                LeaveOnline(SessionFailure.VersionMismatch);
         }
 
         void OnTurnTimerChanged() => TurnTimerChanged?.Invoke();

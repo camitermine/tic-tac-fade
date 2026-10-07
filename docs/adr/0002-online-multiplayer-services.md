@@ -67,14 +67,14 @@ Se mantiene la decisión. Cómo quedó implementada y en qué se precisa lo de a
 - **Entrega:** todos los mensajes van con `NetworkDelivery.ReliableSequenced`, explícito en el código (constante `Delivery`) aunque sea el default del método. Una jugada confirmada perdida o desordenada no puede quedar librada a que la detecte la comparación de hash.
 - **Interfaz:** `IMatchTransport` (en Game), con una base serializable `MatchTransportBehaviour` para la escena, igual que `ISessionService`. Los tests usan un transporte en memoria con cola y bombeo explícito.
 - **Mensajes:** `StartMatch`, `Propose`, `Confirmed` (jugada, número de jugada, `PositionKey.Value` después de aplicarla), `Rejected`, `Ack` (número de jugada y clave del cliente), `RematchRequest`, `Desync`. Viajan jugadas, nunca el tablero.
-- **Buffer de entrada:** lo que llega antes de que el flujo del dispositivo abra el canal (`Open`) se guarda y se entrega al abrir. Cubre el caso de un `StartMatch` que el host manda apenas conecta el cliente, antes de que el join haya terminado del lado del cliente.
+- **Buffer de entrada:** lo que llega antes de que el flujo del dispositivo abra el canal (`Open`) se guarda y se entrega al abrir. Cubre el caso de un `StartMatch` que el host manda apenas conecta el cliente, antes de que el join haya terminado del lado del cliente. (Desde 2026-10-06 el arranque ya no depende de este buffer: ver el handshake `Ready` más abajo.)
 
 ### Autoridad y sincronización
 
 - **El host es la autoridad** (`OnlineMatch`, en Game). Toda propuesta, sea un toque en el host o un mensaje del cliente, pasa por la misma validación: `RulesEngine.IsLegal` más "cada dispositivo solo mueve su símbolo". Una propuesta ilegal se rechaza y ningún estado cambia.
 - **En ambos dispositivos `GameManager` solo recibe jugadas confirmadas**, a través del controller de cada lado: `OnlineLocalPlayer` (el humano de este dispositivo, que propone y espera) o `RemotePlayer`. `GameManager` no sabe que hay red.
 - **Comparación de hash:** el host manda su `PositionKey.Value` con cada confirmación. El cliente aplica, compara y devuelve un `Ack` con su clave, y el host también compara. Ante cualquier diferencia: `Debug.LogError`, `Desync` al otro lado, se cierra la sesión y ambos vuelven al menú. Nunca se sigue jugando desincronizados.
-- **Arranque:** lo dispara la conexión de Netcode (`OnClientConnectedCallback` en el host), no el join de lobby, porque antes de eso no se pueden mandar mensajes.
+- ~~**Arranque:** lo dispara la conexión de Netcode (`OnClientConnectedCallback` en el host), no el join de lobby, porque antes de eso no se pueden mandar mensajes.~~ Reemplazado por el handshake `Ready` (ver "Handshake de arranque y versión de protocolo").
 - **Símbolos:** el host es siempre X y el cliente siempre O (GDD §3.1). La revancha requiere el pedido de los dos; el host la anuncia con `StartMatch` invirtiendo quién empieza.
 - ~~Pendiente (iteración 3): si una propuesta del cliente no recibe `Confirmed` ni `Rejected` (host caído), `OnlineLocalPlayer` queda esperando con el input bloqueado.~~ Resuelto en la iteración 3 (ver abajo).
 
@@ -89,6 +89,28 @@ Se mantiene la decisión. Cómo quedó implementada y en qué se precisa lo de a
 - **Detección de desconexión:** `IMatchTransport.PeerDisconnected`, que en `NgoMatchTransport` sale de `OnClientDisconnectCallback`. También cuentan los eventos de sesión (`PlayerHasLeft` en el host, `Deleted`/`RemovedFromSession` en el cliente). Los dos caminos terminan en `OnlineMatch.NotifyPeerGone()`, que es idempotente.
   - Cliente caído en partida: el host espera una gracia de 5 s y después el cliente pierde por abandono. Los 3 vencimientos quedan para el rival conectado que no juega.
   - Host caído en partida, o propuesta sin respuesta en 10 s: el cliente vuelve al menú con "Se perdió la conexión con el rival".
+
+## Implementación (actualizado 2026-10-06: handshake de arranque y versión de protocolo)
+
+**Contexto:** en dos pruebas con celulares, el cliente se quedó en la sala de espera mientras al host le arrancaba la partida (ai-log [15]). Después no se reprodujo y la causa no se confirmó. En vez de seguir buscándola, se cambió el arranque para que esa clase de fallo no pueda dejar a un lado esperando para siempre (ai-log [16]).
+
+- **Handshake `Ready`:** el host ya no arranca con la conexión de Netcode.
+  - El cliente manda `Ready` cuando su flujo está listo (`OnlineMatch.Start`) y lo reenvía cada 1 s (`OnlineNetworkSettings.ReadyResendIntervalSeconds`, `SerializeField` de `MatchFlow`) hasta aceptar el primer `StartMatch`.
+  - El host arranca la primera partida con el primer `Ready`. A cada `Ready` posterior le contesta reenviando el `StartMatch` actual, y nunca arranca otra partida por eso. Así, un `StartMatch` perdido se recupera con el siguiente `Ready`.
+  - Se quitaron `IMatchTransport.PeerConnected` e `IsPeerConnected`, que quedaron sin uso.
+- **Número de partida:** `StartMatch` lleva `MatchNumber`, un campo propio que vale 1 en la primera partida y suma 1 en cada revancha. El cliente acepta solo el número que espera y descarta cualquier `StartMatch` repetido o anterior. Una sola regla cubre el `Ready` duplicado, el reenvío y un `StartMatch` viejo que llega tarde después de una revancha, sin depender de cuándo se limpia un flag.
+- **Timer en el reenvío:** si la partida está en curso, el reenvío incluye un `TurnTimer` con el **tiempo restante según el reloj del host**, no la duración completa. Si no, el cliente vería más tiempo del que tiene y el host le cortaría el turno antes de que su cuenta llegue a cero.
+- **`Ready` sin conexión:** el cliente puede mandar `Ready` antes de que Netcode haya conectado, sobre todo en un arranque en frío. `CustomMessagingManager.SendNamedMessage` no chequea la conexión (NGO 2.13.3), así que `NgoMatchTransport.Send` no lo llama mientras `!IsConnectedClient`. Descarta el `Ready` en silencio, con un log de diagnóstico apagado por defecto, y el reenvío se ocupa del resto. Los demás mensajes mantienen el warning de siempre.
+- **Formato de trama** (`MatchMessageCodec`, en Game, compartido por `NgoMatchTransport` y el transporte en memoria de los tests):
+  - empieza con una cabecera fija que no cambia nunca: `kind`(1) + versión de protocolo(2), seguida de los campos;
+  - mide 31 bytes en total;
+  - los valores de `MatchMessageKind` son parte del protocolo y no se renumeran.
+- **Versión de protocolo:** `MatchMessageCodec.ProtocolVersion = 1` (es la primera versión con número).
+  - Toda trama la lleva en la cabecera. En la práctica, la primera que se chequea es el `Ready` del cliente.
+  - Si no coincide, se decodifica solo la cabecera, sin importar el tamaño, y los dos lados vuelven al menú con "El rival tiene otra versión del juego".
+  - El host manda `VersionMismatch` y espera la respuesta del cliente (o su caída, o a lo sumo 2 s) antes de cerrar, para que el cliente vea ese mensaje y no "La sala se cerró". El cliente contesta y se va enseguida.
+- **Lectura tolerante:** el decodificador nunca lanza. Descarta con un warning ("dropped malformed match message") una trama más corta que la cabecera, un `kind` desconocido o una trama de la misma versión con tamaño inesperado. Reemplaza la lectura campo por campo que tiraba `OverflowException` con mensajes de otro tamaño.
+- **Compatibilidad:** los builds anteriores (sin versión ni `Ready`) **no** son compatibles. Un host nuevo con un cliente viejo se queda esperando en la sala, porque nunca le llega un `Ready`. Desde la versión 1, cualquier cambio de formato o de significado sube `ProtocolVersion`.
 
 ## Referencias
 
