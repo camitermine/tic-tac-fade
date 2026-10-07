@@ -28,6 +28,7 @@ Assets/_Project/
     UI/          TicTacFade.UI          views, input, HUD
   Tests/
     EditMode/    TicTacFade.Core.Tests  NUnit tests for Core
+    PlayMode/    TicTacFade.PlayModeTests  scene wiring, flow, online (fakes + in-memory transport)
   Scenes/ Prefabs/ Config/ Art/ Audio/
 ```
 
@@ -36,7 +37,7 @@ Assets/_Project/
 3. **The game state is immutable.** `RulesEngine.Apply(state, move)` returns a new state plus the resulting events. No hidden mutation.
 4. **Moves are commands.** A `Move` is the only thing sent over the network. Both peers run the same Core rules.
 5. **Players are interchangeable** through `IPlayerController` (`LocalHumanPlayer`, `RemotePlayer`, and later `AIPlayer`). The match code must never branch on the player type.
-6. **Parameters are configurable, never hardcoded.** Board size, buffer size, win length, timers and draw limits come from `GameConfig`: a plain C# class in Core, wrapped by a ScriptableObject in Game. The win check must be generic (N in a row on an NxN board).
+6. **Parameters are configurable, never hardcoded.** Board rules (board size, buffer size, win length, draw limits) come from `GameConfig`, a plain C# class in Core. Match-level parameters the rules engine never reads (online turn timers, timeouts) live in the Game layer. Both are edited through `GameConfigAsset`. Core only holds what Core uses. The win check must be generic (N in a row on an NxN board).
 7. **Core communicates outward through events** (e.g. `PiecePlaced`, `PieceFaded`, `GameEnded`). UI observes; it does not poll or own rules.
 8. **No premature abstraction.** Use a pattern only when it solves a current problem or an item already on the GDD roadmap. No DI framework for the MVP.
 

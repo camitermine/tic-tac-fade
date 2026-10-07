@@ -29,6 +29,7 @@ namespace TicTacFade.PlayModeTests
         InMemoryMatchTransport _hostTransport;
         InMemoryMatchTransport _clientTransport;
         OnlineTestDevice _remote;
+        ManualClock _clock;
 
         [UnityTearDown]
         public IEnumerator TearDown()
@@ -77,10 +78,19 @@ namespace TicTacFade.PlayModeTests
             Assert.AreEqual("Turno del rival", FindLabel("TurnLabel").text, "The host is still X.");
             Assert.AreEqual(string.Empty, FindLabel("RematchStatus").text);
 
-            // The client leaves in the middle of the rematch.
+            // The client drops in the middle of the rematch: after the short
+            // grace it loses by abandonment (no reconnection in the MVP).
+            _clientTransport.Drop();
             _session.RaiseOpponentLeft();
+            LogAssert.Expect(LogType.Warning, new Regex("didn't come back"));
+            _clock.Advance(OnlineNetworkSettings.Default().DisconnectGraceSeconds);
+            yield return WaitForState(FlowState.Result);
+            Assert.AreEqual("Ganaste: el rival abandonó", FindLabel("ResultLabel").text);
+            Assert.IsFalse(FindButton("RematchButton").interactable, "No rematch without an opponent.");
+
+            Press("MenuButton");
             yield return WaitForState(FlowState.Menu);
-            Assert.AreEqual(SessionFailureMessages.ToText(SessionFailure.OpponentLeft), FindLabel("MenuStatus").text);
+            Assert.AreEqual(string.Empty, FindLabel("MenuStatus").text);
             Assert.AreEqual(1, _session.LeaveCalls, "The host must close the session.");
 
             // Local play is back to normal: both sides on this device.
@@ -93,7 +103,7 @@ namespace TicTacFade.PlayModeTests
         }
 
         [UnityTest]
-        public IEnumerator Client_BufferedStartThenHostClosesRoom_ShowsOpponentLeft()
+        public IEnumerator Client_ReadyHandshakeThenHostClosesRoom_ShowsOpponentLeft()
         {
             yield return LoadSceneAsClient();
 
@@ -111,9 +121,11 @@ namespace TicTacFade.PlayModeTests
             Assert.AreEqual(2, _gameManager.CurrentState.TotalMoves);
             Assert.AreEqual(_remote.PositionKey, KeyOf(_gameManager.CurrentState));
 
-            _session.RaiseSessionLost(); // the host closed the room
+            // The host's device goes away mid-match without "Salir".
+            _hostTransport.Drop();
+            _session.RaiseSessionLost();
             yield return WaitForState(FlowState.Menu);
-            Assert.AreEqual(SessionFailureMessages.ToText(SessionFailure.OpponentLeft), FindLabel("MenuStatus").text);
+            Assert.AreEqual(SessionFailureMessages.ToText(SessionFailure.ConnectionLost), FindLabel("MenuStatus").text);
             LogAssert.NoUnexpectedReceived();
         }
 
@@ -131,17 +143,52 @@ namespace TicTacFade.PlayModeTests
         }
 
         [UnityTest]
-        public IEnumerator Host_ExitDuringMatch_ClosesSession()
+        public IEnumerator Host_ExitDuringMatch_ShowsLeavingThenLosesByAbandonment()
         {
             yield return LoadSceneAsHost();
             yield return ConfirmCell(0);
             Pump();
 
             Press("ExitButton");
+            yield return null;
+            Assert.AreEqual("Saliendo...", FindLabel("TurnLabel").text, "While waiting for the ack.");
+            Assert.AreEqual(FlowState.Playing, _flow.State);
+
+            Pump(); // Forfeit reaches the client, its ack comes back
             yield return WaitForState(FlowState.Menu);
 
             Assert.AreEqual(1, _session.LeaveCalls, "\"Salir\" online must close the session.");
-            Assert.IsNull(_gameManager.CurrentState);
+            Assert.AreEqual(string.Empty, FindLabel("MenuStatus").text, "Leaving on purpose is not an error.");
+            Assert.IsNotNull(_remote.AbandonResult, "The other device must get the abandonment.");
+            Assert.AreEqual(Occupant.X, _remote.AbandonResult.Abandoner);
+            Assert.AreEqual(AbandonmentCause.Quit, _remote.AbandonResult.Cause);
+            Assert.AreEqual(Occupant.O, _remote.AbandonResult.Winner);
+        }
+
+        [UnityTest]
+        public IEnumerator Host_TurnTimer_CountsDownAndMarksAbsent()
+        {
+            yield return LoadSceneAsHost();
+
+            yield return null; // a frame for the flow's Tick
+            Assert.AreEqual("0:30", FindLabel("TurnTimerLabel").text, "A full 30 s turn for X.");
+
+            _clock.Advance(12.2);
+            yield return null;
+            Assert.AreEqual("0:18", FindLabel("TurnTimerLabel").text);
+
+            // X (the host, this device) lets its turn expire: automatic move, X absent.
+            _clock.Advance(20);
+            yield return null;
+            Pump();
+            Assert.AreEqual(1, _gameManager.CurrentState.TotalMoves, "The expired turn plays an automatic move.");
+            StringAssert.EndsWith("· ausente", FindLabel("CountX").text);
+
+            // O plays; X's next turn is a 10 s absent turn.
+            _remote.Tap(_remote.FirstLegalCell());
+            Pump();
+            yield return null;
+            Assert.AreEqual("0:10", FindLabel("TurnTimerLabel").text);
         }
 
         [UnityTest]
@@ -162,41 +209,75 @@ namespace TicTacFade.PlayModeTests
             Assert.AreEqual(1, _session.LeaveCalls);
         }
 
+        [UnityTest]
+        public IEnumerator Host_ClientWithOtherProtocolVersion_BothLeaveWithVersionMessage()
+        {
+            yield return LoadScene();
+            InMemoryMatchTransport.CreatePair(out _hostTransport, out _clientTransport);
+            _flow.SetMatchTransport(_hostTransport);
+
+            Press("CreateRoomButton");
+            yield return WaitForState(FlowState.Lobby);
+
+            // A client of another version: its Ready only shares the stable header.
+            LogAssert.Expect(LogType.Warning, new Regex("protocol version"));
+            _clientTransport.DeliverRawToPeer(OtherVersionFrame(MatchMessageKind.Ready));
+            Pump();
+            yield return null;
+            Assert.AreEqual(FlowState.Lobby, _flow.State, "The host waits for the client to get the message.");
+            Assert.IsTrue(_hostTransport.Sent.Any(m => m.Kind == MatchMessageKind.VersionMismatch));
+            Assert.IsNull(_gameManager.CurrentState, "No match may start with another version.");
+
+            // The client answers before leaving: now the host leaves too.
+            _clientTransport.DeliverRawToPeer(OtherVersionFrame(MatchMessageKind.VersionMismatch));
+            Pump();
+            yield return WaitForState(FlowState.Menu);
+            Assert.AreEqual("El rival tiene otra versión del juego.", FindLabel("MenuStatus").text);
+            Assert.AreEqual(1, _session.LeaveCalls);
+            LogAssert.NoUnexpectedReceived();
+        }
+
+        static byte[] OtherVersionFrame(MatchMessageKind kind)
+        {
+            var otherVersion = (ushort)(MatchMessageCodec.ProtocolVersion + 1);
+            return MatchMessageCodec.Encode(new MatchMessage(kind, protocolVersion: otherVersion));
+        }
+
         // This device hosts; the remote device is the client.
         IEnumerator LoadSceneAsHost()
         {
             yield return LoadScene();
             InMemoryMatchTransport.CreatePair(out _hostTransport, out _clientTransport);
             _flow.SetMatchTransport(_hostTransport);
-            _remote = new OnlineTestDevice("RemoteClientDevice", _clientTransport);
+            _remote = new OnlineTestDevice("RemoteClientDevice", _clientTransport, _clock);
 
             Press("CreateRoomButton");
             yield return WaitForState(FlowState.Lobby);
 
-            _remote.Match.Start();
-            _hostTransport.ConnectPeer();
+            _remote.Match.Start(); // its Ready reaches this host: the match starts
             Pump();
             yield return WaitForState(FlowState.Playing);
         }
 
-        // This device is the client; the remote device hosts. The host's
-        // StartMatch reaches this device before its join finished, so it is
-        // buffered until the flow opens the online match.
+        // This device is the client; the remote device hosts and waits for
+        // this device's Ready, sent when the flow opens the online match.
         IEnumerator LoadSceneAsClient()
         {
             yield return LoadScene();
             InMemoryMatchTransport.CreatePair(out _hostTransport, out _clientTransport);
             _flow.SetMatchTransport(_clientTransport);
-            _remote = new OnlineTestDevice("RemoteHostDevice", _hostTransport);
+            _remote = new OnlineTestDevice("RemoteHostDevice", _hostTransport, _clock);
 
             _remote.Match.Start();
-            _hostTransport.ConnectPeer();
-            Pump(); // StartMatch waits in this device's buffer
+            Pump();
+            Assert.IsNull(_remote.State, "The host must not start before the client's Ready.");
 
             Press("JoinByCodeButton");
             yield return WaitForState(FlowState.JoinByCode);
             FindInput("CodeInput").text = FakeSessionService.FakeCode;
             Press("JoinButton");
+            yield return WaitForState(FlowState.Lobby);
+            Pump(); // Ready → host, StartMatch → this device
             yield return WaitForState(FlowState.Playing);
         }
 
@@ -224,6 +305,10 @@ namespace TicTacFade.PlayModeTests
             _gameManager = GameObject.Find("GameManager").GetComponent<GameManager>();
             _session = new GameObject("FakeSessionService").AddComponent<FakeSessionService>();
             _flow.SetSessionService(_session);
+
+            // Time only moves when a test advances it: no timer fires on its own.
+            _clock = new ManualClock();
+            _flow.SetTimeSources(_clock, new FixedRandomSource());
         }
 
         IEnumerator WaitForState(FlowState expected)

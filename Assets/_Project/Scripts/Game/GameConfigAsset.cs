@@ -21,6 +21,14 @@ namespace TicTacFade.Game
         [SerializeField] int maxTotalMoves = 40;
         [SerializeField] int repetitionLimit = 3;
 
+        [Header("Online turn timer (Game only: the rules engine never reads it)")]
+        [SerializeField] float turnTimeSeconds = 30f;
+        [SerializeField] float absentTurnTimeSeconds = 10f;
+        [SerializeField] int maxConsecutiveTimeouts = 3;
+
         public GameConfig ToGameConfig() => new GameConfig(boardSize, bufferSize, winLength, maxTotalMoves, repetitionLimit);
+
+        public OnlineTimerConfig ToOnlineTimerConfig() =>
+            new OnlineTimerConfig(turnTimeSeconds, absentTurnTimeSeconds, maxConsecutiveTimeouts);
     }
 }

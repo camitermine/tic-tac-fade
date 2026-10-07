@@ -1,8 +1,8 @@
 # GDD: Tic-Tac-Fade
 
-**Versión:** 0.4
-**Estado:** MVP definido — pre-producción
-**Fecha:** Septiembre 2026
+**Versión:** 0.8
+**Estado:** MVP implementado — en verificación en dispositivos
+**Fecha:** Octubre 2026
 **Fuente de verdad:** este archivo (`docs/GDD.md`). Cualquier espejo externo (Google Docs) es secundario.
 
 ---
@@ -17,6 +17,8 @@
 | 0.4 | Sept 2026 | Dirección visual del pase de arte (§6): neón sobre fondo oscuro, X cian/O magenta, formas blancas tintadas por código con glow por Bloom de URP, disolución por shader + partículas. Restricción técnica: Bloom requiere Canvas en Screen Space - Camera, no Overlay. |
 | 0.5 | Sept 2026 | Regla explícita de quién empieza una partida iniciada desde el menú (§3.1). Flujo de pantallas completo con alcance MVP / posterior y decisión de "Crear sala" sin pantalla de configuración (§4.3). |
 | 0.6 | Sept 2026 | Online: host siempre X y cliente siempre O, revancha alterna quién empieza (§3.1). Jugadas confirmadas por el host, corte de partida ante hash distinto, revancha con pedido de ambos y "El rival salió" (§5). |
+| 0.7 | Sept 2026 | Abandono por 3 vencimientos confirmado; la jugada automática nunca gana y el 3.er vencimiento no juega; "Salir" online es derrota (§3.5). Desconexión del cliente con gracia de 5 s, caída del host y jugada sin respuesta (§5). |
+| 0.8 | Oct 2026 | Mensaje de versión distinta del rival (§5); el arranque de partida online pasa por un handshake Ready. |
 
 ---
 
@@ -85,10 +87,13 @@ El juego puede ciclar indefinidamente entre dos jugadores que defienden bien. Ha
 
 - **Timer normal:** `TurnTime` = 30 s por turno.
 - **Vencimiento:** si el timer llega a 0, se juega automáticamente una **jugada legal aleatoria** por ese jugador, y el turno pasa al rival. Esto le da margen a un jugador con problemas de conexión para volver.
+  - **Jugada automática (v0.7):** se elige al azar entre las jugadas legales que **no ganan** la partida; si todas las jugadas legales ganan, cualquiera. Motivo: que un jugador ausente no pueda ganar sin haber jugado.
 - **Modo ausente:** a partir de un vencimiento, el jugador queda marcado como *ausente* y sus turnos siguientes duran `AbsentTurnTime` = 10 s.
-- **Regreso:** en cuanto el jugador ausente hace una jugada propia, deja de estar ausente y vuelve al timer normal.
-- **Abandono (propuesta, a confirmar):** 3 vencimientos consecutivos cuentan como derrota por abandono.
-- **Autoridad:** el host lleva el timer y genera la jugada aleatoria. Esa jugada se transmite como cualquier otra, así ambos clientes quedan sincronizados.
+- **Regreso:** en cuanto el jugador ausente hace una jugada propia, deja de estar ausente y vuelve al timer normal. La jugada propia también reinicia la cuenta de vencimientos consecutivos.
+- **Abandono (confirmado, v0.7):** `MaxConsecutiveTimeouts` = 3 vencimientos consecutivos cuentan como derrota por abandono. El tercer vencimiento **no** juega una jugada automática: la partida termina directamente.
+- **"Salir" durante una partida online (v0.7):** cuenta como derrota por abandono de quien se va. El que queda ve "Ganaste: el rival abandonó".
+- **Autoridad:** el host lleva el timer y genera la jugada aleatoria. Esa jugada se transmite como cualquier otra, así ambos clientes quedan sincronizados. El cliente solo muestra la cuenta regresiva que anuncia el host.
+- **Configuración:** estos parámetros no los usan las reglas del tablero, así que viven en la capa Game (no en el `GameConfig` del Core) y se editan en el mismo `GameConfigAsset`.
 
 ### 3.6 Invariante: siempre hay jugada legal
 
@@ -156,10 +161,15 @@ Menú principal
 - **Sincronización:** se transmiten **jugadas** (`Move`), no el tablero completo. Ambos clientes aplican las mismas reglas del Core.
   - **(v0.6)** Cada jugada, también las del host, la valida el host antes de aplicarse. Los dos dispositivos aplican solo jugadas confirmadas por el host, en el mismo orden. Una jugada ilegal se rechaza y no cambia nada.
   - **(v0.6)** Después de cada jugada ambos comparan el hash de posición. Si no coinciden, la partida se corta y los dos vuelven al menú con el mensaje "Se perdió la sincronización con el rival". Nunca se sigue jugando desincronizados.
-- **Resultado online (v0.6):** la revancha requiere que la pidan los dos; quien la pidió ve "Esperando al rival...". Si uno elige "Menú" (o "Salir" durante la partida), la sesión se cierra y el otro vuelve al menú con "El rival salió". Que salir cuente como derrota es de la iteración 3.
-- **Desconexiones:**
-  - Si el **cliente** se desconecta, la partida sigue y su timer corre (3.5). La reconexión es *best effort* en el MVP.
-  - Si el **host** se desconecta, la partida termina y el cliente vuelve al menú con un mensaje.
+- **Resultado online (v0.6):** la revancha requiere que la pidan los dos; quien la pidió ve "Esperando al rival...". Si uno elige "Menú" desde el resultado, la sesión se cierra y el otro vuelve al menú con "El rival salió".
+- **"Salir" durante la partida (v0.7):** es derrota por abandono de quien se va (§3.5). Quien sale ve "Saliendo..." hasta que el otro dispositivo confirma que recibió el aviso (a lo sumo 2 s) y vuelve al menú. El que queda ve "Ganaste: el rival abandonó", sin revancha posible.
+- **Desconexiones (v0.7):** no hay reconexión en el MVP. Se distinguen dos casos:
+  - **Rival desconectado:** si la red informa que el **cliente** se cayó, el host le da una gracia corta de 5 s por si fue un corte instantáneo, y después el cliente pierde por abandono ("Ganaste: el rival abandonó"). No se esperan los 3 vencimientos: nadie va a volver.
+  - **Rival conectado que no juega:** es el caso de los vencimientos y el modo ausente (§3.5), hasta el abandono por 3 vencimientos consecutivos.
+  - Si se cae el **host**, el cliente vuelve al menú con "Se perdió la conexión con el rival".
+  - Si una jugada del cliente no recibe respuesta del host en 10 s, se desbloquea el input y se trata como caída del host.
+  - La gracia de 5 s y la espera de 10 s son parámetros de red de la capa Game, no reglas de juego.
+- **Versión distinta (v0.8):** si los dos dispositivos tienen versiones del juego que no se entienden entre sí, ninguno arranca la partida y los dos vuelven al menú con "El rival tiene otra versión del juego".
 
 ---
 
@@ -217,4 +227,4 @@ Menú principal
 | `RepetitionLimit` | 3 | Apariciones de una posición para declarar empate. |
 | `TurnTime` | 30 s | Duración normal del turno. |
 | `AbsentTurnTime` | 10 s | Duración del turno en modo ausente. |
-| `MaxConsecutiveTimeouts` | 3 | Vencimientos seguidos para abandono (a confirmar). |
+| `MaxConsecutiveTimeouts` | 3 | Vencimientos seguidos para abandono (confirmado en v0.7). |

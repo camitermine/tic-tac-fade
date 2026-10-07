@@ -21,6 +21,12 @@ namespace TicTacFade.Game
         [SerializeField] SessionServiceBehaviour sessionService;
         [SerializeField] MatchTransportBehaviour matchTransport;
 
+        [Header("Online network waits (not game rules; the turn timer is in GameConfigAsset)")]
+        [SerializeField] float proposalResponseTimeoutSeconds = 10f;
+        [SerializeField] float forfeitAckTimeoutSeconds = 2f;
+        [SerializeField] float disconnectGraceSeconds = 5f;
+        [SerializeField] float readyResendIntervalSeconds = 1f;
+
         // Every screen declares explicitly where its cancel/back action goes.
         static readonly Dictionary<FlowState, FlowState[]> AllowedTransitions = new Dictionary<FlowState, FlowState[]>
         {
@@ -38,11 +44,26 @@ namespace TicTacFade.Game
         ISessionService _session;
         IMatchTransport _transport;
         OnlineMatch _online;
+        IClock _clock = new UnityClock();
+        IRandomSource _random = new SystemRandomSource();
 
         public FlowState State { get; private set; } = FlowState.Menu;
 
-        /// <summary>Result of the last finished match; null until one ends.</summary>
-        public GameEndedEvent LastResult { get; private set; }
+        /// <summary>How the last match ended (board or abandonment); null until one ends.</summary>
+        public MatchResult LastResult { get; private set; }
+
+        /// <summary>Online: the symbol this device plays (host X, client O). None offline.</summary>
+        public Occupant OnlineLocalSymbol => _online != null ? _online.LocalSymbol : Occupant.None;
+
+        /// <summary>A rematch can be asked for: always offline; online only if the other device is still here.</summary>
+        public bool CanRematch => _online == null || _online.CanRematch;
+
+        public bool IsTurnTimerRunning => _online != null && _online.IsTurnTimerRunning;
+        public int TurnSecondsRemaining => _online != null ? _online.SecondsRemaining : 0;
+        public bool IsAbsent(Occupant player) => _online != null && _online.IsAbsent(player);
+
+        /// <summary>Consecutive timeouts that make a player lose by abandonment (for the result text).</summary>
+        public int MaxConsecutiveTimeouts => gameManager.OnlineTimerConfig.MaxConsecutiveTimeouts;
 
         public Occupant CurrentStartingPlayer { get; private set; } = Occupant.X;
 
@@ -70,7 +91,15 @@ namespace TicTacFade.Game
         public event Action<bool> BusyChanged;
         public event Action<SessionFailure> FailureChanged;
         public event Action<bool> OpponentStatusChanged;
-        public event Action<bool> RematchWaitingChanged;
+
+        /// <summary>Rematch waiting or availability changed (result screen buttons).</summary>
+        public event Action ResultOptionsChanged;
+
+        /// <summary>Online turn countdown started/stopped or absent mode changed.</summary>
+        public event Action TurnTimerChanged;
+
+        /// <summary>The whole seconds of the online countdown changed.</summary>
+        public event Action<int> TurnSecondsChanged;
 
         void Awake()
         {
@@ -94,6 +123,21 @@ namespace TicTacFade.Game
             // Fired from Start (not Awake) so every screen has already
             // subscribed in its own Awake and starts in sync.
             StateChanged?.Invoke(State);
+        }
+
+        void Update()
+        {
+            _online?.Tick();
+        }
+
+        /// <summary>
+        /// Replaces the clock and randomness of the next online match (tests
+        /// use a manual clock and a controlled random source).
+        /// </summary>
+        public void SetTimeSources(IClock clock, IRandomSource random)
+        {
+            _clock = clock;
+            _random = random;
         }
 
         /// <summary>
@@ -178,9 +222,11 @@ namespace TicTacFade.Game
         }
 
         /// <summary>
-        /// Leaves a match in progress and discards it. Online it also closes
-        /// the session, so both devices go back to the menu (counting it as a
-        /// loss is iteration 3).
+        /// Leaves a match in progress and discards it. Online it is an
+        /// abandonment: this player loses, the other device is told (and
+        /// shows "Ganaste: el rival abandonó"), then the session closes.
+        /// Busy ("Saliendo...") until the other device acknowledged, at most
+        /// a couple of seconds.
         /// </summary>
         public void ExitMatch()
         {
@@ -192,7 +238,7 @@ namespace TicTacFade.Game
 
             if (IsOnline)
             {
-                LeaveOnline(SessionFailure.None);
+                RunBusy(ForfeitAndLeaveAsync);
                 return;
             }
 
@@ -341,14 +387,16 @@ namespace TicTacFade.Game
                 SetOpponentConnected(true);
         }
 
+        // Host side: the client left the session.
         void OnOpponentLeft()
         {
             if (State == FlowState.Lobby)
                 SetOpponentConnected(false);
             else if (IsOnlineMatchScreen && !IsBusy)
-                LeaveOnline(SessionFailure.OpponentLeft); // host side: the client left
+                OnPeerLeftDuringMatchOrResult();
         }
 
+        // Client side: the host closed the room (or this device was removed).
         void OnSessionLost()
         {
             // While busy we are the ones leaving: that is not a lost session.
@@ -364,8 +412,30 @@ namespace TicTacFade.Game
             }
             else if (IsOnlineMatchScreen)
             {
-                LeaveOnline(SessionFailure.OpponentLeft); // client side: the host closed the room
+                OnPeerLeftDuringMatchOrResult();
             }
+        }
+
+        // During a match the OnlineMatch decides (host: short grace, then the
+        // client loses by abandonment; client: connection lost). After an
+        // abandonment result the screen stays (that result is final); after
+        // a board result the other player simply left.
+        void OnPeerLeftDuringMatchOrResult()
+        {
+            if (State == FlowState.Playing)
+            {
+                _online.NotifyPeerGone();
+                return;
+            }
+
+            if (LastResult != null && LastResult.IsAbandonment)
+            {
+                _online.NotifyPeerGone();
+                ResultOptionsChanged?.Invoke(); // no rematch anymore
+                return;
+            }
+
+            LeaveOnline(SessionFailure.OpponentLeft);
         }
 
         bool IsOnlineMatchScreen => IsOnline && (State == FlowState.Playing || State == FlowState.Result);
@@ -378,10 +448,18 @@ namespace TicTacFade.Game
                 return;
             }
 
-            _online = new OnlineMatch(gameManager, _transport);
+            NetDiagnostics.Log($"flow in {State}: opening the online match.");
+            var network = new OnlineNetworkSettings(proposalResponseTimeoutSeconds, forfeitAckTimeoutSeconds,
+                disconnectGraceSeconds, readyResendIntervalSeconds);
+            _online = new OnlineMatch(gameManager, _transport, gameManager.OnlineTimerConfig, network, _clock, _random);
             _online.MatchStartRequested += OnOnlineMatchStartRequested;
             _online.LocalRematchRequestedChanged += OnLocalRematchRequestedChanged;
             _online.Desynced += OnDesynced;
+            _online.Abandoned += OnAbandoned;
+            _online.ConnectionLost += OnConnectionLost;
+            _online.VersionMismatch += OnVersionMismatch;
+            _online.TurnTimerChanged += OnTurnTimerChanged;
+            _online.SecondsRemainingChanged += OnTurnSecondsChanged;
             _online.Start();
         }
 
@@ -396,6 +474,11 @@ namespace TicTacFade.Game
             _online.MatchStartRequested -= OnOnlineMatchStartRequested;
             _online.LocalRematchRequestedChanged -= OnLocalRematchRequestedChanged;
             _online.Desynced -= OnDesynced;
+            _online.Abandoned -= OnAbandoned;
+            _online.ConnectionLost -= OnConnectionLost;
+            _online.VersionMismatch -= OnVersionMismatch;
+            _online.TurnTimerChanged -= OnTurnTimerChanged;
+            _online.SecondsRemainingChanged -= OnTurnSecondsChanged;
             _online.Dispose();
             _online = null;
 
@@ -404,8 +487,55 @@ namespace TicTacFade.Game
                 gameManager.DiscardMatch();
                 gameManager.Initialize(new LocalHumanPlayer(Occupant.X), new LocalHumanPlayer(Occupant.O));
             }
-            RematchWaitingChanged?.Invoke(false);
+            ResultOptionsChanged?.Invoke();
+            TurnTimerChanged?.Invoke();
         }
+
+        // "Salir" online: tell the other device, wait for its ack (bounded
+        // by the OnlineMatch), then close the session.
+        async Task ForfeitAndLeaveAsync()
+        {
+            var forfeitDone = new TaskCompletionSource<bool>();
+            void OnForfeitCompleted() => forfeitDone.TrySetResult(true);
+
+            _online.ForfeitCompleted += OnForfeitCompleted;
+            _online.Forfeit();
+            await forfeitDone.Task;
+            if (this == null) return;
+            if (_online != null)
+                _online.ForfeitCompleted -= OnForfeitCompleted;
+
+            EndOnlineMatch();
+            await _session.LeaveAsync();
+            if (this == null) return;
+
+            SetOpponentConnected(false);
+            TryTransitionTo(FlowState.Menu);
+        }
+
+        void OnAbandoned(MatchResult result)
+        {
+            LastResult = result;
+            if (State == FlowState.Playing)
+                TryTransitionTo(FlowState.Result);
+            ResultOptionsChanged?.Invoke();
+        }
+
+        void OnConnectionLost()
+        {
+            if (!IsBusy)
+                LeaveOnline(SessionFailure.ConnectionLost);
+        }
+
+        void OnVersionMismatch()
+        {
+            if (!IsBusy)
+                LeaveOnline(SessionFailure.VersionMismatch);
+        }
+
+        void OnTurnTimerChanged() => TurnTimerChanged?.Invoke();
+
+        void OnTurnSecondsChanged(int seconds) => TurnSecondsChanged?.Invoke(seconds);
 
         // Closes the session and goes back to the menu, showing why.
         void LeaveOnline(SessionFailure reason)
@@ -432,10 +562,13 @@ namespace TicTacFade.Game
             }
 
             if (TryTransitionTo(FlowState.Playing))
+            {
+                NetDiagnostics.Log($"flow → Playing, {startingPlayer} first.");
                 StartMatch(startingPlayer);
+            }
         }
 
-        void OnLocalRematchRequestedChanged(bool waiting) => RematchWaitingChanged?.Invoke(waiting);
+        void OnLocalRematchRequestedChanged(bool waiting) => ResultOptionsChanged?.Invoke();
 
         void OnDesynced()
         {
@@ -454,7 +587,7 @@ namespace TicTacFade.Game
 
         void OnGameEnded(GameEndedEvent evt)
         {
-            LastResult = evt;
+            LastResult = MatchResult.FromBoard(evt);
             TryTransitionTo(FlowState.Result);
         }
 
