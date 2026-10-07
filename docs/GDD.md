@@ -1,7 +1,7 @@
 # GDD: Tic-Tac-Fade
 
 **Versión:** 0.8
-**Estado:** MVP implementado — en verificación en dispositivos
+**Estado:** MVP v0.1.0
 **Fecha:** Octubre 2026
 **Fuente de verdad:** este archivo (`docs/GDD.md`). Cualquier espejo externo (Google Docs) es secundario.
 

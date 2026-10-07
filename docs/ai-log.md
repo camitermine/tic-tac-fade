@@ -741,9 +741,10 @@ El objetivo es que quede visible **qué se le pidió a la IA, qué produjo y qu�
 - Compila sin errores. Los únicos warnings son CS0618 en `SceneWiringAndInputTests`, que ya estaban.
 - EditMode 34/34. PlayMode 69/69 vía MCP (58 anteriores, 10 de handshake y 1 de flujo).
 - En consola quedan solo los errores intencionales de los tests de desync y del código `AB12CD`.
-- **Pendiente (Cami), dos celulares:**
-  - varios arranques en frío creando la primera sala;
-  - opcional: un APK con `ProtocolVersion` cambiado contra uno normal, para ver el mensaje en los dos lados.
+- **En dispositivos (Cami, 2026-10-07, dos celulares):** varias pruebas de creación de sala y arranque de partida.
+  - El bug del cliente que se quedaba en la sala de espera **no se reprodujo tras el arreglo estructural**.
+  - Esto no confirma la causa: tampoco se había reproducido en las pruebas de [15] antes del arreglo.
+- **No probado:** el APK con `ProtocolVersion` cambiado contra uno normal, para ver el mensaje de versión distinta en los dos lados. Esta verificación era opcional; el caso queda cubierto por los tests.
 
 **Pendientes y límites conocidos:**
 - **Incompatible con los APKs anteriores:** un host nuevo con un cliente viejo se queda en la sala de espera, porque no le llega ningún `Ready`.
