@@ -3,6 +3,7 @@
     "rootNamespace": "TicTacFade.Core.Tests",
     "references": [
         "TicTacFade.Core",
+        "TicTacFade.Solver",
         "UnityEngine.TestRunner",
         "UnityEditor.TestRunner"
     ],

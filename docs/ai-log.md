@@ -761,6 +761,129 @@ El objetivo es que quede visible **qué se le pidió a la IA, qué produjo y qu�
 
 ---
 
+## [17] 2026-10-07 — GDD v0.9: "Opciones de sala" en el roadmap
+
+**Objetivo:** documentar en el roadmap (GDD §8) las opciones de sala posteriores al MVP. Solo documentación, sin código.
+
+**Pedido / prompt:** diseño dado por Cami.
+- Ubicación: ítem nuevo después del modo vs IA.
+- Opciones independientes: indicadores sí/no, tiempo de turno 10/20/30 s y tope de jugadas según el solver.
+- "Normal" y "Difícil" son presets, no modos con reglas propias.
+- Sin indicadores se oculta toda la información de qué ficha se va, lo que concreta el "modo memoria" de §4.1.
+- El host elige y la configuración viaja al cliente. El tope de jugadas es regla del Core y tiene que ser idéntico en ambos lados.
+
+**Qué hizo la IA:**
+- GDD §8: ítem 3 "Opciones de sala" con el diseño tal como lo pidió Cami. Los ítems siguientes se renumeraron de 4 a 7.
+- Fila 0.9 en el historial y encabezado en versión 0.9. El estado sigue en "MVP v0.1.0", porque la versión del GDD es independiente de la del juego.
+
+**Revisión humana:** pendiente.
+
+**Verificación:** no aplica (sin código).
+
+**Preguntas abiertas para cuando se planifique** (no se resolvieron en el GDD):
+- **Tiempo de turno vs. turno en modo ausente.** Con turno de 10 s, el turno de 10 s del modo ausente (§3.5, §9) deja de ser más corto. Falta decidir si el tiempo de ausente escala con la opción o queda fijo.
+- **Alcance de las opciones.** El timer hoy es solo online (§3.5). Falta definir si las opciones de sala aplican también al modo local y al modo vs IA, o solo a salas online.
+- **Versión de protocolo.** Mandar la configuración al cliente cambia el protocolo, así que sube `ProtocolVersion` (ADR 0002).
+
+**Commit(s):** — (sin commitear; Cami revisa y commitea).
+
+---
+
+## [18] 2026-10-07 — Solver por análisis retrógrado (GDD §8.1)
+
+**Objetivo:** resolver el juego completo en 3x3 con buffer 3 y responder con datos. ¿La posición inicial es victoria forzada para quien empieza, para el segundo, o para ninguno? Si hay victoria forzada, ¿en cuántas jugadas? Solo el solver y sus respuestas: sin IA ni UI.
+
+**Pedido / prompt:** el pedido de Cami, con plan aprobado.
+- Assembly nuevo `TicTacFade.Solver` (C# puro), sin modificar el Core.
+- Identidad por `PositionKey`.
+- Test de equivalencia con `RulesEngine` en todas las posiciones alcanzables.
+- Chequeo del tope de 40.
+- Medición de tamaño, tiempo y memoria, y criterio entre calcular al arrancar o guardar un asset.
+- Rechazo de configuraciones grandes.
+
+Respuestas de Cami al plan: distancias en plies, medición en el editor por ahora y umbral de 5 millones de posiciones. Agregados de Cami:
+- informar cada primera jugada y la distribución de resultados;
+- considerar WebGL (sin hilos) en el criterio runtime vs. asset, sin cálculo durante una partida;
+- anotar para la IA que la victoria forzada asume que el camino no repite posiciones ya vistas en la partida.
+
+**Qué hizo la IA:**
+- **`Scripts/Solver/`** (`TicTacFade.Solver.asmdef`, `noEngineReferences: true`, depende solo del Core):
+  - `GameSolver`: validación con cota del espacio de estados, exploración hacia adelante y retrógrado con cola por distancia.
+  - `SolverPosition`: generación de jugadas espejo de `RulesEngine`.
+  - `SolverTable`: búsqueda por `PositionKey` o `GameState`, y `GetMoveResults` con el valor de cada jugada.
+  - `SolverStats`, `PositionResult`, `PositionOutcome`, `MoveResult` y `SolverMoveEdge`.
+- **El Core no cambió.** No hizo falta exponer nada: la API pública alcanzó.
+- **`Scripts/Editor/SolverReport.cs`:** menú `Tic-Tac-Fade/Solver/Solve MVP and report`.
+- **Tests EditMode (`SolverTests`, 7):**
+  - equivalencia con `RulesEngine.IsLegal` y `Apply` en todas las posiciones alcanzables (legalidad por casilla, victoria inmediata, posición resultante y cantidad total);
+  - consistencia del retrógrado: el valor de cada posición es el mejor de sus jugadas;
+  - victoria en 1;
+  - derrota inevitable en 2, verificada además a mano con el Core: la casilla que bloquea está ocupada por la ficha más vieja del que defiende;
+  - posición inicial estable: `Win in 13` en dos corridas y también empezando O, con bordes que ganan y esquinas y centro sin victoria forzada;
+  - líneas forzadas dentro del tope;
+  - rechazo de 4x4 con buffer 4.
+- **Docs:**
+  - `docs/solver-results.md` (nuevo);
+  - ADR 0004 (assembly, criterio de `NoForcedWin`, notas para la IA, criterio runtime vs. asset);
+  - respuesta en GDD §8.1.
+
+**Hallazgos:**
+- **Quien empieza tiene victoria forzada en 13 jugadas** (plies). Exige abrir en un borde (1, 3, 5 o 7); abriendo en una esquina o en el centro, ninguno puede forzarla.
+- **116.074 posiciones alcanzables** (la cota era 204.086) y 369.801 jugadas.
+- **Distribución:** Win 67,7 %, Loss 20,9 % y NoForcedWin 11,4 %.
+- **Líneas más largas:** la victoria forzada más larga mide 17 y la derrota más larga 16.
+- **Tope de 40:** no corta ninguna línea forzada desde el inicio.
+- **Rendimiento:** unos 0,5 s en el editor y unos 30 MB retenidos por la tabla completa.
+- **Inclinación para la IA:** un asset precalculado compacto (alrededor de 1 MB) para WebGL y móvil. La decisión final se toma en la iteración de la IA.
+
+**Revisión humana:** plan aprobado con los tres agregados de arriba. El resultado todavía no fue revisado.
+
+**Verificación:**
+- Compila sin errores.
+- EditMode 41/41 vía MCP (34 anteriores + 7 del solver). La suite tarda unos 23 s; casi todo es el test de equivalencia.
+- **PlayMode vía MCP: no corrió.** "Test job failed to initialize", 0 tests, dos veces, también después de forzar la recompilación. Según CLAUDE.md, no cuenta como pasada.
+- **PlayMode desde el Test Runner (Cami): 69/69.**
+  - La consola dejó 5 errores y 20 warnings, revisados uno por uno. Todos los provocan los tests a propósito:
+    - errores: el código `AB12CD` y cuatro "out of sync" de los dos tests de desync;
+    - warnings: mensajes malformados, versión distinta, propuestas ilegales, gracia de desconexión, "Salir" sin ack y propuesta sin respuesta.
+  - No hay errores de compilación ni logs inesperados.
+- El informe del Editor se obtuvo ejecutando el menú vía `execute_code`, porque `read_console` no devolvió el `Debug.Log`.
+
+**Pendientes y límites conocidos:**
+- ~~**El resultado depende de que la generación de jugadas del solver sea correcta.** La cubren el test de equivalencia con el Core y el de consistencia del retrógrado. No hay una verificación independiente por búsqueda hacia adelante.~~ Resuelto: ver "Verificación independiente" más abajo.
+- **Medición solo en el editor.** Falta medir en Android y, cuando exista, en WebGL.
+- **El juego está resuelto a favor de quien empieza.** Para el balance y las dificultades de la IA, a decidir.
+- **Valores del tope para "Opciones de sala":** elegirlos con datos requiere otra corrida con el tope como parte del estado.
+
+**Verificación independiente (agregada antes del commit, a pedido de Cami):**
+- **`tools/verify_solver.py`:** un solver en Python escrito a partir de las reglas del GDD. Lo escribió Claude en la conversación de planificación del proyecto (no el agente de Claude Code), sin acceso al código en C#. Cami lo sumó al repo. No tiene dependencias.
+- La IA lo leyó completo antes de sumarlo y lo corrió (`python3 -I tools/verify_solver.py`, ~1,5 s de exploración).
+- **Reproduce exactamente todos los números:**
+  - 116.074 posiciones y 369.801 jugadas;
+  - `Win in 13` en la posición inicial;
+  - las 9 aperturas (bordes `Win in 13`, esquinas y centro `NoForcedWin`);
+  - Win 78.613, Loss 24.268, NoForcedWin 13.193;
+  - distancias máximas 17 y 16, y el histograma completo de distancias.
+- **No cubre** la simetría cuando empieza O (no explora esa posición); la verifica el test en C#.
+- Además, reconstruye una línea forzada de 13 jugadas sin posiciones repetidas: X1 O8 X4 O7 X6 O2 X0 O3 X8 O4 X5 O7 X2.
+- Queda mencionado en `docs/solver-results.md` y en la fila 0.10 del GDD.
+
+**Otros cambios antes del commit:**
+- **GDD 0.10:** fila en el historial con los resultados del solver y encabezado actualizado. Cami pidió no usar 1.0.
+- **Test de equivalencia marcado `[Category("Slow")]`.**
+- **CLAUDE.md, Testing:** "Los tests de categoría Slow se corren siempre que se toque el Core o el Solver."
+
+**Aprendizajes:**
+- Medir en un menú del Editor deja los números reproducibles, sin que el assembly puro necesite logging.
+- Cuando el resultado es fuerte y sorprendente (el centro no fuerza nada), conviene un test de consistencia interna además del de equivalencia con las reglas.
+- Una segunda implementación escrita desde la especificación (el GDD), sin acceso al código y en otro lenguaje, es la verificación más fuerte de un resultado que no se puede comprobar a mano.
+  - Que los dos histogramas coincidan número por número descarta errores de implementación del código en C#.
+  - No descarta una lectura equivocada del GDD que compartan las dos implementaciones. Las dos las escribió Claude, en contextos distintos, así que la independencia es de código, no de criterio.
+
+**Commit(s):** — (sin commitear; Cami revisa y commitea).
+
+---
+
 ## [0] 2026-09-22 — Definición del MVP y setup de documentación
 
 **Objetivo:** revisar el GDD v0.1, cerrar las decisiones pendientes y preparar el repo para el trabajo con agentes.

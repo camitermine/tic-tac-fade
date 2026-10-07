@@ -1,0 +1,16 @@
+{
+    "name": "TicTacFade.Solver",
+    "rootNamespace": "TicTacFade.Solver",
+    "references": [
+        "TicTacFade.Core"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": true
+}
