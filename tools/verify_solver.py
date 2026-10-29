@@ -27,47 +27,54 @@ def moves(state):
         out.append((c, win, ns))
     return out
 
+def explore(roots):
+    succ = {}
+    q = deque(roots); seen = set(roots)
+    edges = 0
+    while q:
+        s = q.popleft()
+        ms = moves(s)
+        succ[s] = ms
+        edges += len(ms)
+        for c, win, ns in ms:
+            if not win and ns not in seen:
+                seen.add(ns); q.append(ns)
+    return succ, edges
+
+# retrograde: s -> (outcome, dist), outcome 'W'/'L' for the mover; unsolved = no forced win
+def solve(succ):
+    pred = defaultdict(list)
+    remaining = {}
+    val = {}
+    for s, ms in succ.items():
+        remaining[s] = sum(1 for _,w,_ in ms if not w)
+        for c, w, ns in ms:
+            if not w: pred[ns].append(s)
+    queue = deque()
+    for s, ms in succ.items():
+        if any(w for _,w,_ in ms):
+            val[s] = ('W', 1); queue.append(s)
+    # process in increasing distance: queue is FIFO and distances assigned nondecreasing
+    maxchild = defaultdict(int)
+    while queue:
+        s = queue.popleft()
+        o, d = val[s]
+        for p in pred[s]:
+            if p in val: continue
+            if o == 'L':
+                val[p] = ('W', d+1); queue.append(p)
+            else:  # s is W for its mover -> bad for p
+                remaining[p] -= 1
+                maxchild[p] = max(maxchild[p], d)
+                if remaining[p] == 0:
+                    val[p] = ('L', maxchild[p]+1); queue.append(p)
+    return val
+
 t0 = time.time()
 start = ((), (), 0)
-succ = {}
-q = deque([start]); seen = {start}
-edges = 0
-while q:
-    s = q.popleft()
-    ms = moves(s)
-    succ[s] = ms
-    edges += len(ms)
-    for c, win, ns in ms:
-        if not win and ns not in seen:
-            seen.add(ns); q.append(ns)
+succ, edges = explore([start])
 print("positions", len(succ), "edges", edges, "explore_s", round(time.time()-t0,2))
-
-# retrograde
-pred = defaultdict(list)
-remaining = {}
-val = {}   # s -> (outcome, dist)  outcome 'W'/'L'
-for s, ms in succ.items():
-    remaining[s] = sum(1 for _,w,_ in ms if not w)
-    for c, w, ns in ms:
-        if not w: pred[ns].append(s)
-queue = deque()
-for s, ms in succ.items():
-    if any(w for _,w,_ in ms):
-        val[s] = ('W', 1); queue.append(s)
-# process in increasing distance: queue is FIFO and distances assigned nondecreasing
-maxchild = defaultdict(int)
-while queue:
-    s = queue.popleft()
-    o, d = val[s]
-    for p in pred[s]:
-        if p in val: continue
-        if o == 'L':
-            val[p] = ('W', d+1); queue.append(p)
-        else:  # s is W for its mover -> bad for p
-            remaining[p] -= 1
-            maxchild[p] = max(maxchild[p], d)
-            if remaining[p] == 0:
-                val[p] = ('L', maxchild[p]+1); queue.append(p)
+val = solve(succ)
 
 def name(s):
     return val.get(s, ('N', None))
@@ -84,8 +91,16 @@ print("W", cnt['W'], "L", cnt['L'], "N", len(succ)-len(val))
 dists = Counter(v[1] for v in val.values())
 print("maxW", max(d for o,d in val.values() if o=='W'), "maxL", max(d for o,d in val.values() if o=='L'))
 print("dist", sorted(dists.items()))
-# O-starts symmetry
-print("O starts:", name(((),(),1)) if ((),(),1) in succ else "not explored (expected symmetric)")
+# Both starting players (the AI table, ADR 0005): a rematch alternates who starts,
+# so the table holds the union of the positions reachable from either start.
+start_o = ((), (), 1)
+union_succ, union_edges = explore([start, start_o])
+union_val = solve(union_succ)
+print("union positions (X or O starts)", len(union_succ), "edges", union_edges)
+for label, root in (("X starts:", start), ("O starts:", start_o)):
+    print(label, union_val.get(root, ('N', None)))
+# Same value for every position the two graphs share (it depends only on the position).
+print("union consistent with X-only solve:", all(union_val.get(s) == val.get(s) for s in succ))
 
 # Play out the forced line: winner picks shortest win, loser picks longest defense.
 s = start; ply = 0; visited = []

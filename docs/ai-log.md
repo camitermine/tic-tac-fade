@@ -884,6 +884,91 @@ Respuestas de Cami al plan: distancias en plies, medición en el editor por ahor
 
 ---
 
+## [19] 2026-10-29 — Modo contra la IA, fase 1: la IA sin UI (GDD §8.2)
+
+**Objetivo:** un `AIPlayer` que juega con la tabla del solver (ADR 0004), con tres niveles y una demora que no traba el bucle de turnos. La UI queda para la fase 2.
+
+**Pedido / prompt:** `docs/prompts/ai-player.md`, con plan aprobado. Respuestas de Cami al plan:
+- `NotifyMatchStopped()` en `IPlayerController`, llamado por `GameManager` en todos los caminos, más una guarda de jugadas tardías como segunda red.
+- Entre empates, preferir `NoForcedWin` para mantener viva la partida; el empate inmediato, solo cuando la alternativa es perder.
+
+Agregados de Cami:
+- análisis a dos jugadas: victoria sin escape > victoria con escape > empate, y documentar que más profundo no se analiza;
+- flag por nivel "bloquear la derrota inmediata", activado en Normal y Perfecta;
+- `*.bytes binary` en `.gitattributes`.
+
+**Qué hizo la IA:**
+- **Solver:**
+  - `CompactSolverTable` (nuevo): formato binario con header de reglas, las claves ordenadas y un byte por posición. Une las tablas de los dos iniciadores y busca por búsqueda binaria.
+  - `SolverTable`: expone `Entries` (las posiciones con su valor), que es lo que necesita la tabla compacta.
+- **Game:**
+  - nuevos: `AIDifficulty`, `AILevelConfig`, `AIConfig`, `AIMoveCategory`, `AIMoveEvaluation`, `AIMoveEvaluator`, `AIMoveChooser` y `AIPlayer`;
+  - `GameConfigAsset`: sección de niveles (error y los dos flags por nivel) y la demora;
+  - `IPlayerController.NotifyMatchStopped()`, implementado vacío en los demás controllers;
+  - `GameManager`: lo llama en `Initialize`, `StartNewGame`, `DiscardMatch`, `Halt` y al terminar la partida, y suma la guarda de jugadas tardías;
+  - `SystemRandomSource`: constructor con semilla;
+  - el asmdef suma la referencia a `TicTacFade.Solver`.
+- **Editor:** `SolverTableGenerator`, menú `Tic-Tac-Fade/Solver/Generate AI table`. Generó `Config/AI/SolverTable.bytes`: 133.364 posiciones, 1,17 MB, alrededor de 1,2 s.
+- **Tests EditMode (`CompactSolverTableTests`, 8):**
+  - coincide con el solver para los dos iniciadores [Slow];
+  - contiene aperturas de O;
+  - ida y vuelta de bytes, determinística;
+  - posición desconocida;
+  - reglas distintas: error que pide regenerar;
+  - otros límites de empate: carga igual;
+  - datos truncados;
+  - el asset commiteado coincide con uno regenerado [Slow].
+- **Tests PlayMode (`AIMoveChooserTests` 20, `AIPlayerTests` 9):**
+  - la IA nunca juega una jugada ilegal (los 4×4 cruces de niveles, 40 semillas);
+  - Perfecta contra Perfecta: gana quien empieza, en 13, con los dos iniciadores;
+  - Perfecta empezando contra un rival al azar gana las 200 partidas de cada iniciador;
+  - tirada de error determinística por nivel;
+  - victoria inmediata: Fácil puede dejarla pasar; Normal y Perfecta la toman sin tirar;
+  - derrota inmediata: Normal bloquea aun en el error; Fácil puede dejarla abierta; sin jugada segura, cualquiera;
+  - tope en el límite exacto (pérdida y victoria), por las dos caras;
+  - repetición: perdiendo, la toma; ganando, la evita; prefiere una victoria sin escape;
+  - con `GameManager` real y reloj manual:
+    - el bucle sigue después de una jugada tardía;
+    - una partida entera entre dos IA con demora;
+    - demora 0 sincrónica;
+    - la demora pendiente se cancela con `DiscardMatch`, `StartNewGame`, `Halt` e `Initialize`;
+    - `NotifyMatchStopped` al terminar la partida;
+    - jugada tardía sin partida, ignorada.
+- **Docs:** borrador del ADR 0005; `CLAUDE.md` (dependencias `Game → Solver → Core`, el assembly del solver y `AIPlayer` en la lista de controllers); `.gitattributes`.
+
+**Hallazgos:**
+- **La tabla tiene que cubrir los dos iniciadores.** La revancha empieza con O, y la fase inicial de esas partidas no aparece en la tabla de X. Al unir las dos tablas, los valores coinciden en todas las posiciones compartidas.
+- **El Core no hizo falta tocarlo.** `GameState.PositionCounts` sigue `internal`: la IA juega cada candidata con `Apply` y lee el resultado.
+- **Bug latente en `GameManager`:** una jugada recibida después de `DiscardMatch` tiraba una `NullReferenceException`. Ningún controller lo provocaba hasta ahora; ahora lo cubren la cancelación y la guarda.
+- **Los escenarios de repetición no se escribieron a mano.** `execute_code` del MCP no respondía durante la implementación (ver Verificación), así que no se pudieron buscar posiciones fijas desde el Editor. Los tests las encuentran ellos mismos, con partidas con semilla que buscan volver a posiciones vistas, y exigen encontrar al menos una.
+  - Con límite 3, "victoria con y sin escape a la vez" apareció una sola vez en 1500 partidas; por eso ese test usa límite 2.
+
+**Revisión humana:** plan aprobado con los agregados de arriba. Cami aprobó la fase 1 con los ajustes que figuran en Verificación y pidió commitearla como punto de control antes de la fase 2.
+
+**Verificación:**
+- Compila sin errores; la consola quedó limpia. Los warnings CS0618 de `SceneWiringAndInputTests` ya estaban.
+- EditMode 49/49 vía MCP, Slow incluidos (alrededor de 28 s).
+- PlayMode vía MCP: la primera corrida dio 0 tests y no se contó. Después de forzar la recompilación y filtrar por assembly: **98/98** (69 anteriores + 29 nuevos), en alrededor de 23 s. La regla de los "0 tests" de `CLAUDE.md` se actualizó con este paso.
+- **`execute_code` del MCP no respondía** durante la implementación: devolvía `success: false` sin mensaje, incluso con `return 1 + 1`. El resto de las herramientas del MCP (refresh, consola, tests, menús) andaba. Volvió a responder en la revisión, y ahí se usó para forzar el guardado de `GameConfig.asset`.
+- **Verificación independiente con O empezando:** `tools/verify_solver.py` se extendió para explorar también esa posición inicial y la unión de los dos grafos.
+  - Da 133.364 posiciones (igual que el asset) y `Win in 13` para los dos iniciadores.
+  - Coincide con el cálculo solo con X en todas las posiciones compartidas.
+  - Cami lo había verificado igual desde la conversación de planificación.
+  - Queda registrado en `docs/solver-results.md`.
+
+**Ajustes de la revisión de Cami (antes del commit):**
+- `GameConfig.asset` se guardó a la fuerza, para que los campos nuevos de la IA queden en este commit. También se escribieron los tres campos del timer online, que faltaban en el YAML; tienen los mismos valores por defecto.
+- Comentario en el test de "victoria con escape" sobre por qué usa `RepetitionLimit = 2`.
+- `CLAUDE.md`: la regla de los "0 tests" ahora dice recompilar y filtrar por assembly.
+
+**Aprendizajes:**
+- Cuando una herramienta de exploración falla, un test que busca su propio escenario y exige encontrar al menos uno reemplaza a una posición fija, y además no depende de cómo quedó la tabla.
+- Para un caso que casi no aparece, conviene buscar el parámetro que lo vuelve frecuente sin cambiar la lógica bajo prueba (aquí, el límite de repetición), en vez de aumentar la cantidad de partidas a ciegas.
+
+**Commit(s):** — (sin commitear; Cami revisa y commitea).
+
+---
+
 ## [0] 2026-09-22 — Definición del MVP y setup de documentación
 
 **Objetivo:** revisar el GDD v0.1, cerrar las decisiones pendientes y preparar el repo para el trabajo con agentes.

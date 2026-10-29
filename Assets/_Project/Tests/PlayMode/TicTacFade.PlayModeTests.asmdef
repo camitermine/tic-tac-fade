@@ -5,6 +5,7 @@
         "UnityEngine.TestRunner",
         "UnityEditor.TestRunner",
         "TicTacFade.Core",
+        "TicTacFade.Solver",
         "TicTacFade.Game",
         "TicTacFade.UI",
         "TicTacFade.Net",

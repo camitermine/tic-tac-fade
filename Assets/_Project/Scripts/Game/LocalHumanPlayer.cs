@@ -22,6 +22,8 @@ namespace TicTacFade.Game
 
         public void NotifyTurnStarted(GameState state) { } // waits for UI input, nothing to do proactively
 
+        public void NotifyMatchStopped() { } // nothing pending
+
         public void NotifyCellSelected(int cellIndex) => MoveChosen?.Invoke(new Move(Player, cellIndex));
     }
 }

@@ -39,7 +39,12 @@ Corrido el 2026-10-07, **reproduce exactamente todos los números de este docume
 
 Dos implementaciones independientes en lenguajes distintos coinciden, además de los tests EditMode del solver en C# (equivalencia con `RulesEngine` en todas las posiciones y consistencia del retrógrado).
 
-**Lo que el script no cubre:** la simetría cuando empieza O, porque no explora esa posición inicial. Eso lo verifica el test en C#.
+**Con O empezando (2026-10-29, iteración de la IA):** el script se extendió para explorar también la posición inicial con O empezando, y la unión de los dos grafos, que es lo que guarda la tabla de la IA (ADR 0005). Imprime:
+- **133.364 posiciones en la unión** (443.250 jugadas), las mismas que tiene `Config/AI/SolverTable.bytes`;
+- **`Win in 13` para los dos iniciadores;**
+- que la unión da el mismo valor que el cálculo solo con X en todas las posiciones que comparten.
+
+Cami lo verificó también desde la conversación de planificación, con los mismos números.
 
 **Ejemplo de línea forzada** (el script la reconstruye: el ganador elige la victoria más corta y el perdedor la defensa más larga). Son 13 jugadas, sin posiciones repetidas:
 

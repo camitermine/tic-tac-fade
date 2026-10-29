@@ -32,6 +32,18 @@ namespace TicTacFade.Solver
             Stats = stats;
         }
 
+        internal GameConfig Config => _config;
+
+        /// <summary>Every solved position with its value.</summary>
+        public IEnumerable<KeyValuePair<PositionKey, PositionResult>> Entries
+        {
+            get
+            {
+                foreach (var pair in _indexByKey)
+                    yield return new KeyValuePair<PositionKey, PositionResult>(pair.Key, _results[pair.Value]);
+            }
+        }
+
         public bool Contains(PositionKey key) => _indexByKey.ContainsKey(key);
 
         public bool TryGetResult(PositionKey key, out PositionResult result)
