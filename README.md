@@ -30,7 +30,7 @@ Assets/_Project/Scripts/
 Assets/_Project/Tests/EditMode/   TicTacFade.Core.Tests
 ```
 
-The rules live in an assembly with no engine references, so they are tested without opening a scene and reused the same way in local mode, online and the future AI. See [ADR 0001](docs/adr/0001-core-puro-csharp.md).
+The rules live in an assembly with no engine references, so they are tested without opening a scene and reused the same way in local mode, online and the future AI. See [ADR 0001](docs/adr/0001-pure-csharp-core.md).
 
 ## Requirements
 

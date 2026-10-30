@@ -2,7 +2,7 @@
 
 > **Language note:** this project was developed in Spanish. This log, like the rest of the documentation, was translated to English on 2026-10-29; the Spanish originals are preserved in the git history. Quoted in-game UI strings stay in Spanish, because they are the game's current text.
 
-Record of the AI-assisted development process. One entry per iteration, the most recent at the top.
+Record of the AI-assisted development process. One entry per iteration, from oldest to newest.
 
 The goal is to make visible **what the AI was asked, what it produced and what the supervisor decided or corrected**.
 
@@ -19,6 +19,39 @@ The goal is to make visible **what the AI was asked, what it produced and what t
 **Learnings:** what would change in the instructions, skills or CLAUDE.md as a result of this.
 **Commit(s):** hash or PR.
 ```
+
+---
+
+## [0] 2026-09-22 — MVP definition and documentation setup
+
+**Goal:** review GDD v0.1, close the pending decisions and prepare the repo for working with agents.
+
+**Request / prompt:** analysis of the GDD (what is good, what is missing, long-term gameplay risks) and a proposal for the architecture and the AI setup.
+
+**What the AI did:**
+- Detected the document's problems:
+  - infinite loop between good players;
+  - possible first-player advantage;
+  - the definition of "life" only worked with the queue full;
+  - the indicator of the opponent's expiring piece was missing;
+  - accessibility of the opacity-based indicators;
+  - the legal-move invariant was missing.
+- Proposed the architecture: Core in pure C#, `IPlayerController`, `Move` as a command and a parameterizable `GameConfig`.
+- Wrote GDD v0.2, `CLAUDE.md` and ADRs 0001 and 0002.
+
+**Human review (Cami's decisions):**
+- Draw: repetition + move cap.
+- Timeout: random move + absent mode with a reduced timer until the player plays again (inspired by Hearthstone), to give a chance to reconnect.
+- MVP with full visual aids.
+- The GDD moves to the repo as the source of truth.
+
+**Verification:** N/A (documentation).
+
+**Learnings:**
+- Closing the ambiguous rules before writing code keeps the agent from deciding them on its own.
+- The rule "if the code and the GDD differ, ask" went into `CLAUDE.md`.
+
+**Commit(s):** —
 
 ---
 
@@ -134,7 +167,7 @@ The goal is to make visible **what the AI was asked, what it produced and what t
 
 ## [5] 2026-09-22 — UI part 1: healthy scene and HUD (camera, safe area, layout)
 
-**Goal:** `docs/promps/ui-parte-1.md` — make the scene builder idempotent, add a Main Camera, and redo the HUD layout with anchors/layout groups + safe area (portrait, Canvas Scaler 1080x1920 match 0.5), verified with the Simulator in 16:9 and 20:9. Out of scope: life indicators, ghost piece and winning line (part 2).
+**Goal:** `docs/prompts/ui-part-1.md` — make the scene builder idempotent, add a Main Camera, and redo the HUD layout with anchors/layout groups + safe area (portrait, Canvas Scaler 1080x1920 match 0.5), verified with the Simulator in 16:9 and 20:9. Out of scope: life indicators, ghost piece and winning line (part 2).
 
 **Request / prompt:** Cami reported a HUD with overlapping texts and a hypothesis of her own: `TicTacFadeSceneBuilder` would not be idempotent and re-running it would duplicate HUD objects, leaving old, non-updated labels on top of the live ones. She asked to verify that hypothesis through MCP before touching anything. She approved the plan with 4 adjustments: (1) the portrait lock is not optional, GDD §2.3 asks for it; (2) `SafeArea.Apply()` also had to set `offsetMin`/`offsetMax` to zero explicitly; (3) add this ai-log entry documenting the ruling-out of her hypothesis with evidence; (4) note as part 2 debt that the fade warning is still concatenated in the same `Text` as the counter.
 
@@ -173,7 +206,7 @@ The goal is to make visible **what the AI was asked, what it produced and what t
 
 ## [6] 2026-09-22 — UI part 2: life per piece, full ghost piece, separate warning
 
-**Goal:** `docs/prompts/ui-parte-2.md` — life indicator per piece (GDD §4.1, both players), separate the fade warning from the counter (pays off the debt from entry [5]), ghost piece with two-tap confirmation that previews the full resulting board (GDD §3.7), and a regression check of the winning line highlight. Explicit constraint: don't touch Core.
+**Goal:** `docs/prompts/ui-part-2.md` — life indicator per piece (GDD §4.1, both players), separate the fade warning from the counter (pays off the debt from entry [5]), ghost piece with two-tap confirmation that previews the full resulting board (GDD §3.7), and a regression check of the winning line highlight. Explicit constraint: don't touch Core.
 
 **Confirmed before touching anything:** all the needed information was already public in `GameState`/`RulesEngine` (`GetLife`, `QueueX`/`QueueO`, `Config.BufferSize`, `GetActiveCount`, `IsLegal`, `WinningLine`) — no change in Core was needed. The winning line highlight was already implemented end to end from before; this task only re-verified it.
 
@@ -1035,36 +1068,3 @@ After the adjustments: compiles with no errors, PlayMode 106/106 (filtered by as
 - The exact `job_id` from the `run_tests` result has to be copied: several queries with mistranscribed ids returned "Unknown job_id".
 
 **Commit(s):** — (not committed; Cami reviews and commits).
-
----
-
-## [0] 2026-09-22 — MVP definition and documentation setup
-
-**Goal:** review GDD v0.1, close the pending decisions and prepare the repo for working with agents.
-
-**Request / prompt:** analysis of the GDD (what is good, what is missing, long-term gameplay risks) and a proposal for the architecture and the AI setup.
-
-**What the AI did:**
-- Detected the document's problems:
-  - infinite loop between good players;
-  - possible first-player advantage;
-  - the definition of "life" only worked with the queue full;
-  - the indicator of the opponent's expiring piece was missing;
-  - accessibility of the opacity-based indicators;
-  - the legal-move invariant was missing.
-- Proposed the architecture: Core in pure C#, `IPlayerController`, `Move` as a command and a parameterizable `GameConfig`.
-- Wrote GDD v0.2, `CLAUDE.md` and ADRs 0001 and 0002.
-
-**Human review (Cami's decisions):**
-- Draw: repetition + move cap.
-- Timeout: random move + absent mode with a reduced timer until the player plays again (inspired by Hearthstone), to give a chance to reconnect.
-- MVP with full visual aids.
-- The GDD moves to the repo as the source of truth.
-
-**Verification:** N/A (documentation).
-
-**Learnings:**
-- Closing the ambiguous rules before writing code keeps the agent from deciding them on its own.
-- The rule "if the code and the GDD differ, ask" went into `CLAUDE.md`.
-
-**Commit(s):** —
