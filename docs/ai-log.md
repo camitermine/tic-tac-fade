@@ -1142,4 +1142,9 @@ Cami's answers to the plan:
 **Learnings:**
 - A test that goes through the real raycaster is the cheapest guard for a render-mode change: flow tests that call `onClick` would pass with a canvas no one can tap.
 
-**Commit(s):** `1d78853`, `2449bb8`, `82c44c4` (spike only), `2f5f6bc`, and this entry.
+**Merge (Cami approved: "se ve bien en el celular"):**
+- The FPS overlay commit was reverted (`1b02645`) and the scene regenerated with the builder; EditMode 49/49, PlayMode 108/108.
+- ADR 0006 (Canvas in Screen Space - Camera + HDR intensity through `TicTacFade/UI Neon`), with the ruled-out alternatives and the risk of keeping a copy of `UI/Default`.
+- GDD v0.14: §6 with the palette, the glow coming from Bloom and the art sources.
+
+**Commit(s):** `1d78853`, `2449bb8`, `82c44c4` (spike only, reverted in `1b02645`), `2f5f6bc`, `91bc6d5`, and the docs commits of this entry.

@@ -1,6 +1,6 @@
 # GDD: Tic-Tac-Fade
 
-**Version:** 0.13
+**Version:** 0.14
 **Status:** v0.2.0 — MVP plus play against the AI
 **Date:** October 2026
 **Source of truth:** this file (`docs/GDD.md`). Any external mirror (Google Docs) is secondary.
@@ -24,6 +24,7 @@
 | 0.11 | Oct 2026 | Vs-AI mode (§8.2): levels Fácil (Easy) / Normal / Perfecta (Perfect) on the solver table, evaluation with repetition history and cap, delay before playing, the human starts the first match and the rematch alternates. Flow: Menu → level choice → Match → Result (§4.3). |
 | 0.12 | Oct 2026 | Documentation translated from Spanish to English, with no change of content; the game's text stays in Spanish. Roadmap: "Localization" item (§8). |
 | 0.13 | Oct 2026 | Status: the game is v0.2.0, the MVP plus play against the AI (§8.2). The GDD version stays independent of the game version. |
+| 0.14 | Oct 2026 | Art pass started (§6): neon palette, glow from URP Bloom through a Screen Space - Camera canvas and an HDR UI shader, applied to the board and pieces. |
 
 ---
 
@@ -183,7 +184,9 @@ Main menu
 ## 6. Audiovisual design (post-MVP)
 
 - **Visual direction (decided):** neon on a dark background. X in cyan, O in magenta. The sprites are **white** shapes, tinted in code (the same pattern the placeholders already use: player color applied at runtime, never baked into the sprite). The glow is handled by **URP Bloom** on those white shapes, not a glow hand-painted in the texture.
-  - **Technical constraint:** Bloom doesn't affect a Canvas in **Screen Space - Overlay** (the game Canvas's current mode, see `TicTacFadeSceneBuilder.CreateHud`/`CreateBoardPanel`). The art pass will require switching the Canvas to **Screen Space - Camera** so the camera's post-processing reaches it. This is a UI architecture change, not a cosmetic one — to keep in mind when that iteration is planned.
+  - **Palette (v0.14):** X cyan `#22E6F0`, O magenta `#FF3BD4`, background `#0B1026`. The grid glows cyan, like the X.
+  - **Glow (implemented, v0.14):** the glow comes from URP Bloom, never from the sprite. The game Canvas renders in **Screen Space - Camera** (Bloom doesn't reach an Overlay canvas), and a UI shader lifts only the neon elements above 1 so a Bloom threshold of 1 leaves text and buttons out. Validated on the phone at 60 FPS. See `docs/adr/0006-neon-canvas-and-hdr-ui.md`.
+  - **Art sources:** white SVGs with round caps in `Assets/_Project/Art/Neon/Source/`, imported as sprites; no glow and no color in the file. So far the board and pieces use them; the menu and HUD are next.
 - **Animations:** the piece disintegrates with a **dissolve shader** plus particles when it fades; a luminous stroke on the winning line.
 - **Planned SFX:** placing a piece, piece entering life 1, piece dissolving, win, timer warning.
 - Placeholders are allowed in the MVP.
