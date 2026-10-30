@@ -49,7 +49,9 @@ ExportedObj/
 # Unity3D generated file on crash reports
 sysinfo.txt
 
-# Builds
+# Builds (release APKs are kept locally in /Releases/ and uploaded to GitHub Releases)
+/[Rr]eleases/
+*_BackUpThisFolder_ButDontShipItWithYourGame/
 *.apk
 *.aab
 *.unitypackage
