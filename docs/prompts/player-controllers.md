@@ -1,11 +1,11 @@
-Refactor de la capa Game: abstraer quién juega cada turno.
+Refactor of the Game layer: abstract who plays each turn.
 
-Crear IPlayerController en la capa Game, con una implementación LocalHumanPlayer que es la que usa el input de pantalla. GameManager deja de asumir que ambas jugadas vienen de la UI: recibe dos controllers y no ramifica nunca por tipo de jugador.
-Convertir GameConfig en un ScriptableObject editable desde el Editor, envolviendo el GameConfig de Core (que sigue siendo C# puro y no se toca). GameManager lo toma de ahí en vez de llamar a GameConfig.Mvp() hardcodeado.
-Que el scene builder cree y wiree la configuración nueva, manteniéndose idempotente.
+Create IPlayerController in the Game layer, with a LocalHumanPlayer implementation that is the one using the screen input. GameManager stops assuming that both moves come from the UI: it receives two controllers and never branches on the player type.
+Turn GameConfig into a ScriptableObject editable from the Editor, wrapping Core's GameConfig (which stays pure C# and is not touched). GameManager takes it from there instead of calling a hardcoded GameConfig.Mvp().
+Make the scene builder create and wire the new configuration, staying idempotent.
 
-El Core no se toca. La UI solo se adapta a la firma nueva, sin cambios visuales.
+The Core is not touched. The UI only adapts to the new signature, with no visual changes.
 
-Verificación: los tests EditMode siguen pasando, los PlayMode siguen pasando, y una partida local completa se juega igual que antes. Agregá un test que pruebe que una partida corre con un controller que no es el humano local (uno fake que juegue la primera celda libre) — es la prueba de que la abstracción sirve para lo que se hizo.
+Verification: the EditMode tests keep passing, the PlayMode tests keep passing, and a complete local match plays the same as before. Add a test proving that a match runs with a controller that is not the local human (a fake one that plays the first free cell) — it is the proof that the abstraction serves what it was made for.
 
-Documentación: entrada en ai-log y, si corresponde, un ADR nuevo sobre la abstracción de controllers.
+Documentation: ai-log entry and, if appropriate, a new ADR about the controller abstraction.

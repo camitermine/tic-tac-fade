@@ -1,67 +1,67 @@
-# ADR 0004 — Solver en un assembly propio y criterio de "sin victoria forzada"
+# ADR 0004 — Solver in its own assembly and the "no forced win" criterion
 
-**Estado:** Aceptada
-**Fecha:** 2026-10-07
+**Status:** Accepted
+**Date:** 2026-10-07
 
-## Contexto
+## Context
 
-El roadmap (GDD §8.1) pide resolver el juego 3x3 con buffer 3 por análisis retrógrado: saber si con juego perfecto la posición inicial es victoria forzada para quien empieza, para el segundo, o para ninguno, y alimentar la IA (GDD §8.2). El solver necesita las reglas exactas del Core, pero el Core no tiene por qué saber que existe un solver. Además, las reglas de empate (repetición y tope de jugadas) dependen del historial de la partida, que no forma parte de una "posición".
+The roadmap (GDD §8.1) asks to solve the 3x3 game with buffer 3 by retrograde analysis: find out whether, with perfect play, the initial position is a forced win for whoever starts, for the second player, or for neither, and feed the AI (GDD §8.2). The solver needs the Core's exact rules, but the Core has no reason to know a solver exists. Also, the draw rules (repetition and move cap) depend on the match history, which is not part of a "position".
 
-## Decisión
+## Decision
 
 ### Assembly
-- **`TicTacFade.Solver`**, C# puro con `noEngineReferences: true`, que depende solo de `TicTacFade.Core`.
-  - El Core no depende del solver.
-  - El Core no se modificó: el solver usa la API pública que ya existía (`GameConfig`, `PositionKey.Compute`, `WinChecker`, `Occupant`).
-- **Dirección de dependencias:** `Solver → Core`. La futura IA (`AIPlayer`, en Game) dependerá de `Solver`.
-- **Tests:** van en el assembly de EditMode existente (`TicTacFade.Core.Tests`, que suma la referencia), sin un assembly de tests nuevo.
-- **Informe:** un menú del Editor (`Tic-Tac-Fade/Solver/Solve MVP and report`, en `Scripts/Editor/SolverReport.cs`) mide y loguea los números. El assembly del solver no puede loguear porque no tiene Unity.
+- **`TicTacFade.Solver`**, pure C# with `noEngineReferences: true`, depending only on `TicTacFade.Core`.
+  - The Core doesn't depend on the solver.
+  - The Core was not modified: the solver uses the public API that already existed (`GameConfig`, `PositionKey.Compute`, `WinChecker`, `Occupant`).
+- **Dependency direction:** `Solver → Core`. The future AI (`AIPlayer`, in Game) will depend on `Solver`.
+- **Tests:** they go in the existing EditMode assembly (`TicTacFade.Core.Tests`, which adds the reference), without a new test assembly.
+- **Report:** an Editor menu (`Tic-Tac-Fade/Solver/Solve MVP and report`, in `Scripts/Editor/SolverReport.cs`) measures and logs the numbers. The solver assembly can't log because it has no Unity.
 
-### Espacio de estados
-- **Posición:** las dos colas con su orden (la más vieja primero) más el jugador de turno. Incluye la fase inicial con menos de `BufferSize` fichas. Es exactamente lo que identifica `PositionKey`, que se usa como identidad.
-- **Una jugada ganadora termina la partida:** en el grafo es una arista hacia "ganó", no un nodo.
-  - Solo puede ganar quien mueve, porque una jugada agrega una ficha propia y solo puede quitar una propia.
-- **Generación de jugadas:** espejo de `RulesEngine`:
-  - casilla libre; la ficha más vieja propia sigue ocupando su casilla durante la jugada, que es la restricción de reemplazo;
-  - después, el FIFO;
-  - después, la victoria evaluada sobre el tablero ya pasado por el FIFO.
-  - Un test EditMode compara contra `RulesEngine.IsLegal` y `RulesEngine.Apply` en **todas** las posiciones alcanzables: legalidad por casilla, victoria inmediata y posición resultante.
-- **Configuraciones:** el solver acepta un `GameConfig` genérico, pero rechaza con `ArgumentException` y un mensaje claro cuando la cota superior del espacio de estados supera **5 millones**.
-  - La cota son las dos colas como secuencias ordenadas de casillas distintas, hasta `BufferSize` cada una, por los 2 jugadores de turno.
-  - 3x3 con buffer 3 tiene una cota de 204.086; 4x4 con buffer 4, del orden de 10^9.
-  - También rechaza configuraciones que no entran en `PositionKey` (64 bits).
+### State space
+- **Position:** both queues with their order (oldest first) plus the player to move. It includes the opening phase with fewer than `BufferSize` pieces. It is exactly what `PositionKey` identifies, which is used as the identity.
+- **A winning move ends the match:** in the graph it is an edge to "won", not a node.
+  - Only the mover can win, because a move adds a piece of its own and can only remove one of its own.
+- **Move generation:** a mirror of `RulesEngine`:
+  - free cell; the mover's own oldest piece still occupies its cell during the move, which is the replacement restriction;
+  - then, the FIFO;
+  - then, the win evaluated on the board already past the FIFO.
+  - An EditMode test compares against `RulesEngine.IsLegal` and `RulesEngine.Apply` on **every** reachable position: legality per cell, immediate win and resulting position.
+- **Configurations:** the solver accepts a generic `GameConfig`, but rejects with an `ArgumentException` and a clear message when the upper bound on the state space exceeds **5 million**.
+  - The bound is the two queues as ordered sequences of distinct cells, up to `BufferSize` each, times the 2 players to move.
+  - 3x3 with buffer 3 has a bound of 204,086; 4x4 with buffer 4, on the order of 10^9.
+  - It also rejects configurations that don't fit in `PositionKey` (64 bits).
 
-### Resultado y criterio de "sin victoria forzada"
-- **Cada posición vale `Win`, `Loss` o `NoForcedWin`** para quien mueve, con la distancia en **jugadas individuales (plies)**, las mismas unidades que `GameState.TotalMoves` y `MaxTotalMoves`.
-  - El ganador minimiza la distancia y el perdedor la maximiza.
-- **Retrógrado:**
-  1. Una posición con jugada ganadora es `Win(1)`.
-  2. Un predecesor de una `Loss(d)` es `Win(d+1)`.
-  3. Una posición cuyas jugadas llevan todas a `Win` es `Loss(1 + máximo)`.
-  4. Se procesa por distancia creciente, con una cola FIFO y un contador de jugadas sin resolver por posición.
-- **Lo que queda sin resolver al final es `NoForcedWin`:** ninguno puede forzar la victoria, y con juego perfecto el juego cicla y termina por repetición (o por tope).
-- **Por qué vale aunque el solver no modele la repetición ni el tope:**
-  - **Repetición:** en una línea forzada (`Win`/`Loss` con juego óptimo) la distancia baja estrictamente en cada jugada, así que ninguna posición se repite dentro de la línea. Además, la repetición solo agrega empates: no puede convertir en victoria algo que en el juego sin límites no lo era.
-  - **Tope:** una victoria forzada a distancia `d` desde una posición con `TotalMoves = t` solo se cumple si `t + d ≤ MaxTotalMoves`. Desde el inicio, la línea forzada más larga de cualquier posición alcanzable mide 17 jugadas, contra un tope de 40 (`docs/solver-results.md`). A mitad de partida puede no alcanzar, y lo tiene que tener en cuenta quien use la tabla (ver abajo).
+### Result and the "no forced win" criterion
+- **Each position is worth `Win`, `Loss` or `NoForcedWin`** for the mover, with the distance in **individual moves (plies)**, the same units as `GameState.TotalMoves` and `MaxTotalMoves`.
+  - The winner minimizes the distance and the loser maximizes it.
+- **Retrograde:**
+  1. A position with a winning move is `Win(1)`.
+  2. A predecessor of a `Loss(d)` is `Win(d+1)`.
+  3. A position whose moves all lead to `Win` is `Loss(1 + maximum)`.
+  4. It is processed by increasing distance, with a FIFO queue and a counter of unresolved moves per position.
+- **What is left unresolved at the end is `NoForcedWin`:** neither side can force the win, and with perfect play the game cycles and ends by repetition (or by the cap).
+- **Why it holds even though the solver doesn't model repetition or the cap:**
+  - **Repetition:** in a forced line (`Win`/`Loss` with optimal play) the distance strictly decreases on each move, so no position repeats within the line. Also, repetition only adds draws: it can't turn into a win something that wasn't one in the unbounded game.
+  - **Cap:** a forced win at distance `d` from a position with `TotalMoves = t` only holds if `t + d ≤ MaxTotalMoves`. From the start, the longest forced line from any reachable position is 17 moves, against a cap of 40 (`docs/solver-results.md`). Mid-match it may not hold, and whoever uses the table has to take it into account (see below).
 
-### Para la iteración de la IA (anotado, no implementado)
-- **Historial de repeticiones:** la victoria forzada asume que el camino no pasa por posiciones que ya aparecieron antes **en la partida**. Si una posición del camino ya salió dos veces, la tercera es empate (`RepetitionLimit = 3`), y la línea "forzada" se corta. Al elegir una jugada, la IA tiene que consultar el historial de repeticiones de la partida real (`GameState` lleva el conteo), no solo el valor de la tabla.
-- **Tope a mitad de partida:** la IA tiene que comparar `TotalMoves + distancia` contra `MaxTotalMoves`.
-- **Calcular al arrancar vs. asset precalculado.** La decisión final se toma en la iteración de la IA, con este criterio:
-  - **El cálculo nunca corre durante una partida.**
-  - **Medido en el editor (Mono, PC):** 116.074 posiciones, unos 0,5 s (exploración 0,46 s + retrógrado 0,06 s) y unos 30 MB de memoria administrada retenida por la tabla completa con su grafo. En un celular puede tardar varias veces más.
-  - **WebGL (roadmap §8):** no hay hilos, así que un cálculo de uno o varios segundos congela el navegador. Ahí calcular al arrancar implica una pantalla de carga explícita, y aun así es una espera visible.
-  - **Una tabla precalculada compacta** (clave de posición → resultado y distancia en un byte, sin el grafo) ocupa del orden de 1 MB. Se carga en milisegundos y no depende de la plataforma. El riesgo es que se desincronice con las reglas; se mitiga regenerándola desde el mismo solver y con un test que compare el asset contra un cálculo en EditMode.
-  - **Inclinación con estos números:** un asset precalculado compacto para WebGL y móvil. Calcular en runtime es aceptable solo como alternativa en el editor o en los tests.
+### For the AI iteration (noted, not implemented)
+- **Repetition history:** the forced win assumes the path doesn't go through positions that already appeared earlier **in the match**. If a position on the path already came up twice, the third time is a draw (`RepetitionLimit = 3`), and the "forced" line is cut. When picking a move, the AI has to check the real match's repetition history (`GameState` keeps the count), not only the table value.
+- **Cap mid-match:** the AI has to compare `TotalMoves + distance` against `MaxTotalMoves`.
+- **Computing at startup vs. a precalculated asset.** The final decision is made in the AI iteration, with this criterion:
+  - **The computation never runs during a match.**
+  - **Measured in the editor (Mono, PC):** 116,074 positions, about 0.5 s (exploration 0.46 s + retrograde 0.06 s) and about 30 MB of managed memory retained by the full table with its graph. On a phone it can take several times longer.
+  - **WebGL (roadmap §8):** there are no threads, so a computation of one or several seconds freezes the browser. There, computing at startup implies an explicit loading screen, and even then it is a visible wait.
+  - **A compact precalculated table** (position key → result and distance in one byte, without the graph) takes on the order of 1 MB. It loads in milliseconds and doesn't depend on the platform. The risk is that it goes out of sync with the rules; it is mitigated by regenerating it from the same solver and with a test that compares the asset against a computation in EditMode.
+  - **Leaning, with these numbers:** a compact precalculated asset for WebGL and mobile. Computing at runtime is acceptable only as an alternative in the editor or in the tests.
 
-## Consecuencias
+## Consequences
 
-**A favor:**
-- El Core no cambió y sigue sin saber del solver.
-- El test de equivalencia garantiza que el solver y el juego aplican las mismas reglas: si cambia una regla del Core, ese test falla.
-- La tabla responde en O(1) el valor de cualquier posición alcanzable y de cada una de sus jugadas, que es justo lo que necesita una IA con dificultades por ruido.
+**For:**
+- The Core didn't change and still doesn't know about the solver.
+- The equivalence test guarantees that the solver and the game apply the same rules: if a Core rule changes, that test fails.
+- The table answers in O(1) the value of any reachable position and of each of its moves, which is exactly what an AI with noise-based difficulties needs.
 
-**En contra:**
-- **El solver duplica la lógica de generación de jugadas** (casilla libre, FIFO, victoria) en vez de llamar a `RulesEngine.Apply`. Llamarlo obligaría a construir un `GameState` por jugada, con el diccionario de repeticiones, y sería mucho más lento. La duplicación queda cubierta por el test de equivalencia.
-- **La tabla completa en memoria pesa unos 30 MB.** Para la IA convendrá una representación compacta.
-- **El test de equivalencia recorre todas las posiciones con `RulesEngine`** y tarda unos 20 s en EditMode.
+**Against:**
+- **The solver duplicates the move generation logic** (free cell, FIFO, win) instead of calling `RulesEngine.Apply`. Calling it would force building a `GameState` per move, with the repetition dictionary, and would be much slower. The duplication is covered by the equivalence test.
+- **The full table in memory weighs about 30 MB.** For the AI a compact representation will be convenient.
+- **The equivalence test walks every position with `RulesEngine`** and takes about 20 s in EditMode.

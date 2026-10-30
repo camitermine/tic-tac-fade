@@ -44,7 +44,8 @@ Assets/_Project/
 
 ## Coding conventions
 
-- All text inside `.cs` files goes in **English**: identifiers, comments, XML docs, and assertion/log messages. Design documentation (`docs/`) goes in Spanish. Commit messages are in English.
+- All text written to the repository goes in **English**: code (identifiers, comments, XML docs, assertion/log messages), documentation (`docs/`, README), the ai-log, ADRs, prompts and commit messages. The project was developed in Spanish; the documentation was translated to English on 2026-10-29 and the originals are in the git history. Conversation with Cami stays in Spanish.
+- Player-facing UI text stays in Spanish until the localization task. New UI strings go in a single place (one strings class) instead of being hardcoded across scripts, so localization later is a lookup swap, not a hunt.
 - PascalCase for types, methods and properties; `_camelCase` for private fields; one type per file; namespaces match the asmdef.
 - Use `[SerializeField] private` over public fields. Avoid `FindObjectOfType` and string-based lookups.
 - No singletons, except a single composition root or bootstrap if one is truly needed.

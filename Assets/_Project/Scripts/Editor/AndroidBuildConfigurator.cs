@@ -51,12 +51,12 @@ namespace TicTacFade.EditorTools
             int sceneCount = EditorBuildSettings.scenes.Length;
             if (sceneCount != 1)
             {
-                Debug.LogWarning($"Tic-Tac-Fade: Build Settings tiene {sceneCount} escena(s), se esperaba 1. Revisar antes de buildear.");
+                Debug.LogWarning($"Tic-Tac-Fade: Build Settings has {sceneCount} scene(s), expected 1. Check before building.");
             }
 
-            Debug.Log($"Tic-Tac-Fade: Android player configurado — {ApplicationIdentifier} v{BundleVersion} " +
+            Debug.Log($"Tic-Tac-Fade: Android player configured — {ApplicationIdentifier} v{BundleVersion} " +
                 $"(code {BundleVersionCode}), IL2CPP/ARM64, minSdk {MinSdkVersion}, portrait, " +
-                $"{sceneCount} escena(s) en Build Settings. Falta el keystore de firma, que queda a mano.");
+                $"{sceneCount} scene(s) in Build Settings. The signing keystore is still missing; it is set up by hand.");
         }
     }
 }
