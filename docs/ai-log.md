@@ -1068,3 +1068,27 @@ After the adjustments: compiles with no errors, PlayMode 106/106 (filtered by as
 - The exact `job_id` from the `run_tests` result has to be copied: several queries with mistranscribed ids returned "Unknown job_id".
 
 **Commit(s):** — (not committed; Cami reviews and commits).
+
+---
+
+## [21] 2026-10-29 — Version bump to 0.2.0
+
+**Goal:** mark the game as 0.2.0 after the vs-AI mode, the documentation translation and the repository cleanup.
+
+**Request / prompt:** version 0.2.0 and `bundleVersionCode` 2, through `AndroidBuildConfigurator` (not by editing YAML); commit on `main` and push.
+
+**What the AI did:**
+- `AndroidBuildConfigurator.cs`: `BundleVersion = "0.2.0"`, `BundleVersionCode = 2`.
+- Ran the menu `Tic-Tac-Fade/Configure Android Player Settings` via MCP, which applies the values through the `PlayerSettings` API.
+
+**Human review:** requested by Cami.
+
+**Verification:**
+- Compiles with no errors.
+- Values read back from `PlayerSettings`: `bundleVersion=0.2.0`, `bundleVersionCode=2`; the rest unchanged (`com.heumila.tictacfade`, minSdk 26).
+- The `ProjectSettings.asset` diff has exactly those two fields (`bundleVersion`, `AndroidBundleVersionCode`).
+- No build was run.
+
+**Learnings:** keeping the version in the configurator's constants makes the bump a one-line change and a two-field diff.
+
+**Commit(s):** this commit (`chore: bump version to 0.2.0`).

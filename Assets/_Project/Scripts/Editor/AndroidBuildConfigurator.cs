@@ -15,8 +15,8 @@ namespace TicTacFade.EditorTools
         const string CompanyName = "HeuMila";
         const string ProductName = "Tic-Tac-Fade";
         const string ApplicationIdentifier = "com.heumila.tictacfade";
-        const string BundleVersion = "0.1.0";
-        const int BundleVersionCode = 1;
+        const string BundleVersion = "0.2.0";
+        const int BundleVersionCode = 2;
 
         // GDD/task ask for API level 23 or higher. AndroidApiLevel23 (and
         // every level down to 16) is marked obsolete in this Unity version,
