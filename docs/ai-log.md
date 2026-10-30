@@ -1131,7 +1131,7 @@ Cami's answers to the plan:
 - Setting the SVG importer's properties by reflection doesn't persist; going through `SerializedObject` does.
 - After Play mode and the test run the Editor re-saved the scene with layout-driven values (anchors and sizes set by layout groups, best-fit font sizes). It was discarded so the committed scene stays exactly the builder's output.
 
-**Human review:** pending — the device check.
+**Human review:** Cami built the branch and played it on the phone with Bloom on: it holds 60 FPS (the target). The glow works on the device, which was the spike's goal. Without-Bloom numbers were not needed: with Bloom it already sits at the cap.
 
 **Verification:**
 - Compiles with no errors; console clean.
