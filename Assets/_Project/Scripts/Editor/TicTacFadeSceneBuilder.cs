@@ -40,7 +40,7 @@ namespace TicTacFade.EditorTools
             var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
 
             var mainCamera = CreateMainCamera();
-            CreatePostProcessVolume();
+            var postProcessVolume = CreatePostProcessVolume();
 
             var eventSystemGO = new GameObject("EventSystem", typeof(EventSystem));
 #if ENABLE_INPUT_SYSTEM
@@ -89,6 +89,7 @@ namespace TicTacFade.EditorTools
             CreateLobbyScreen(canvasGO.transform, matchFlow);
             CreateJoinByCodeScreen(canvasGO.transform, matchFlow);
             CreateAILevelScreen(canvasGO.transform, matchFlow);
+            CreateFpsOverlay(canvasGO.transform, postProcessVolume); // SPIKE ONLY: remove before merging
 
             EditorSceneManager.SaveScene(scene, ScenePath);
 
@@ -148,7 +149,7 @@ namespace TicTacFade.EditorTools
         /// profile asset is created once and then kept, so tuning it in the
         /// Inspector survives a scene rebuild.
         /// </summary>
-        static void CreatePostProcessVolume()
+        static GameObject CreatePostProcessVolume()
         {
             var profile = AssetDatabase.LoadAssetAtPath<VolumeProfile>(NeonVolumeProfilePath);
             if (profile == null)
@@ -169,6 +170,41 @@ namespace TicTacFade.EditorTools
             var volume = volumeGO.AddComponent<Volume>();
             volume.isGlobal = true;
             volume.sharedProfile = profile;
+            return volumeGO;
+        }
+
+        /// <summary>
+        /// SPIKE ONLY (feat/art-neon-spike): FPS readout and Bloom on/off, last
+        /// sibling so it draws on top, inside the safe area, always visible.
+        /// </summary>
+        static void CreateFpsOverlay(Transform canvas, GameObject postProcessVolume)
+        {
+            var rootRT = CreateUIObject("FpsOverlay", canvas, typeof(SafeArea));
+            StretchFull(rootRT);
+            rootRT.GetComponent<SafeArea>().Edges =
+                SafeArea.SafeAreaMode.Top | SafeArea.SafeAreaMode.Right | SafeArea.SafeAreaMode.Bottom | SafeArea.SafeAreaMode.Left;
+
+            var panelRT = CreateUIObject("FpsPanel", rootRT, typeof(Image), typeof(VerticalLayoutGroup), typeof(ContentSizeFitter));
+            panelRT.anchorMin = panelRT.anchorMax = panelRT.pivot = new Vector2(0f, 0f);
+            panelRT.anchoredPosition = new Vector2(16f, 16f);
+            panelRT.GetComponent<Image>().color = new Color(0f, 0f, 0f, 0.6f);
+            var layout = panelRT.GetComponent<VerticalLayoutGroup>();
+            layout.padding = new RectOffset(16, 16, 12, 12);
+            layout.spacing = 8f;
+            layout.childControlWidth = layout.childControlHeight = true;
+            layout.childForceExpandWidth = layout.childForceExpandHeight = false;
+            var fitter = panelRT.GetComponent<ContentSizeFitter>();
+            fitter.horizontalFit = fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+
+            var label = CreateLabel("FpsLabel", panelRT, "FPS …", 28, Color.white, 40f);
+            label.horizontalOverflow = HorizontalWrapMode.Overflow;
+            var toggle = CreateButton("BloomToggleButton", panelRT, "Bloom: ON", 28, new Color(1f, 1f, 1f, 0.15f), Color.white, 72f);
+
+            var overlay = rootRT.gameObject.AddComponent<FpsOverlay>();
+            SetPrivateField(overlay, "label", label);
+            SetPrivateField(overlay, "bloomToggle", toggle);
+            SetPrivateField(overlay, "bloomToggleLabel", toggle.GetComponentInChildren<Text>());
+            SetPrivateField(overlay, "postProcessVolume", postProcessVolume);
         }
 
         static Material GetOrCreateNeonMaterial()
