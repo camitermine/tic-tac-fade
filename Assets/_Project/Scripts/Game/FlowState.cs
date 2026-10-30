@@ -13,5 +13,8 @@ namespace TicTacFade.Game
         Result = 2,
         Lobby = 3,
         JoinByCode = 4,
+
+        /// <summary>Choosing the AI level (GDD §8.2). Back goes to the menu.</summary>
+        AILevelSelect = 5,
     }
 }

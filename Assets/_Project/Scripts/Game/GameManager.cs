@@ -41,6 +41,12 @@ namespace TicTacFade.Game
         /// <summary>Online turn-timer parameters, edited in the same asset as the board rules.</summary>
         public OnlineTimerConfig OnlineTimerConfig => config.ToOnlineTimerConfig();
 
+        /// <summary>AI levels and delay, edited in the same asset as the board rules.</summary>
+        public AIConfig AIConfig => config.ToAIConfig();
+
+        /// <summary>The board rules every match uses (also before the first one starts).</summary>
+        public GameConfig Rules => config.ToGameConfig();
+
         /// <summary>
         /// Whether a board tap on this device can play right now: a match in
         /// progress and the current side's controller taking input.

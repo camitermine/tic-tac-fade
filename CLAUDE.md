@@ -61,7 +61,13 @@ Assets/_Project/
     & "<UnityEditorPath>\Unity.exe" -batchmode -projectPath . -runTests -testPlatform EditMode -testResults ./TestResults/editmode.xml
     ```
 - Run the Slow category tests whenever the Core or the Solver is touched.
-- If `run_tests` for PlayMode via MCP reports 0 tests run, do not count it as a pass. Force a recompile (`refresh_unity` with `compile: request`, `mode: force`) and retry **filtered by assembly** (`assembly_names: ["TicTacFade.PlayModeTests"]`); that worked in the AI phase 1 session (98/98). If it still reports 0, Cami runs the suite from the Editor's Test Runner. Root cause not determined.
+- If `run_tests` via MCP reports 0 tests run or "failed to initialize", in **EditMode or PlayMode**, do not count it as a pass. Retry in this order:
+  1. Force a recompile (`refresh_unity` with `compile: request`, `mode: force`) and retry filtered by assembly (`assembly_names: ["TicTacFade.Core.Tests"]` or `["TicTacFade.PlayModeTests"]`).
+  2. Retry with a longer `init_timeout` (120000 ms).
+  3. If it still runs nothing, Cami runs the suite from the Editor's Test Runner.
+
+  Both modes hit it during the AI work: PlayMode passed on step 1, EditMode on step 2 (right after a PlayMode run). Root cause not determined.
+- Copy the `job_id` exactly from the `run_tests` result when polling `get_test_job`; a mistyped id returns "Unknown job_id", which says nothing about the tests.
 - A task is **not done** until:
   - the project compiles with no console errors (check via MCP), and
   - the tests pass.

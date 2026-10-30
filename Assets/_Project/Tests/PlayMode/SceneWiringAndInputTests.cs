@@ -40,6 +40,7 @@ namespace TicTacFade.PlayModeTests
             var exitMatchButton = Object.FindFirstObjectByType<ExitMatchButton>();
             var lobbyScreen = Object.FindFirstObjectByType<LobbyScreen>();
             var joinByCodeScreen = Object.FindFirstObjectByType<JoinByCodeScreen>();
+            var aiLevelScreen = Object.FindAnyObjectByType<AILevelScreen>();
             var cellViews = Object.FindObjectsByType<CellView>(FindObjectsSortMode.None);
             var visibilities = Object.FindObjectsByType<FlowScreenVisibility>(FindObjectsSortMode.None);
 
@@ -51,8 +52,9 @@ namespace TicTacFade.PlayModeTests
             Assert.IsNotNull(exitMatchButton, "ExitMatchButton not found in scene.");
             Assert.IsNotNull(lobbyScreen, "LobbyScreen not found in scene.");
             Assert.IsNotNull(joinByCodeScreen, "JoinByCodeScreen not found in scene.");
+            Assert.IsNotNull(aiLevelScreen, "AILevelScreen not found in scene.");
             Assert.AreEqual(9, cellViews.Length, "Expected 9 CellView instances.");
-            Assert.AreEqual(6, visibilities.Length, "Expected 6 FlowScreenVisibility (5 screens + exit button).");
+            Assert.AreEqual(7, visibilities.Length, "Expected 7 FlowScreenVisibility (6 screens + exit button).");
 
             AssertNoNullReferenceFields(gameManager);
             AssertNoNullReferenceFields(flow);
@@ -63,6 +65,7 @@ namespace TicTacFade.PlayModeTests
             AssertNoNullReferenceFields(exitMatchButton);
             AssertNoNullReferenceFields(lobbyScreen);
             AssertNoNullReferenceFields(joinByCodeScreen);
+            AssertNoNullReferenceFields(aiLevelScreen);
             foreach (var visibility in visibilities)
                 AssertNoNullReferenceFields(visibility);
             foreach (var cellView in cellViews)

@@ -1,6 +1,6 @@
 # ADR 0005 — IA: tabla precalculada, evaluación efectiva y niveles
 
-**Estado:** Borrador (fase 1 de 2: la IA sin UI). Se completa al cerrar la fase 2.
+**Estado:** Aceptada (fase 1: la IA; fase 2: la UI y el flujo).
 **Fecha:** 2026-10-29
 
 ## Contexto
@@ -60,6 +60,24 @@ Consecuencias del orden:
   - `GameManager` lo llama cuando la partida termina, se descarta, se detiene (`Halt`), arranca otra o se reemplazan los controllers;
   - la IA descarta ahí la jugada pendiente, y los demás controllers no hacen nada.
 - **Segunda red:** `GameManager` ignora, con un warning, una jugada que llega sin partida en curso o con la partida terminada. Antes, una jugada así tiraba una `NullReferenceException`.
+
+### Flujo y UI (fase 2)
+- **Un solo estado nuevo, `AILevelSelect = 5`,** al final del enum, con "volver" al menú.
+  - La partida y el resultado reutilizan `Playing` y `Result`, como hace el online. Lo que cambia es qué controllers enchufa `MatchFlow`, y los textos que la UI lee de `MatchFlow.IsVsAI`.
+  - Dos estados más (`PlayingVsAI`, `ResultVsAI`) habrían duplicado la visibilidad de las pantallas y las transiciones sin agregar comportamiento.
+- **`MatchFlow`:**
+  - es dueño del `AIPlayer` y lo hace avanzar desde su `Update`, igual que con `OnlineMatch`;
+  - carga la tabla una sola vez, la primera vez que se juega contra la IA, desde el `TextAsset` serializado;
+  - la tabla se valida al tocar "Jugar contra la IA", antes de ofrecer los niveles. Si falta o no coincide con las reglas:
+    - el detalle va a la consola;
+    - el jugador ve "La IA no está disponible en esta versión del juego" en la línea de errores del menú;
+    - el flujo se queda en el menú.
+  - **Decisión de Cami:** nunca un botón que no hace nada. El error usa el mismo canal que los demás errores del menú (`LastFailure`), con un valor nuevo, `SessionFailure.AIUnavailable`. El nombre del enum quedó corto ("session"); renombrarlo es un cambio aparte.
+- **Al volver al menú** (desde el resultado o con "Salir"), `MatchFlow` vuelve a poner los dos `LocalHumanPlayer`, igual que al cerrar una partida online. "Salir" descarta la partida, y eso cancela la jugada pendiente de la IA (`NotifyMatchStopped`).
+- **La escena la genera el builder** (`Tic-Tac-Fade/Build Placeholder Scene (1v1)`), que suma:
+  - el botón "Jugar contra la IA";
+  - la pantalla `AILevelScreen`;
+  - la referencia a la tabla en `MatchFlow`.
 
 ## Consecuencias
 

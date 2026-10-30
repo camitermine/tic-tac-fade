@@ -24,6 +24,7 @@ namespace TicTacFade.UI
                 case SessionFailure.Desync: return "Se perdió la sincronización con el rival.";
                 case SessionFailure.ConnectionLost: return "Se perdió la conexión con el rival.";
                 case SessionFailure.VersionMismatch: return "El rival tiene otra versión del juego.";
+                case SessionFailure.AIUnavailable: return "La IA no está disponible en esta versión del juego.";
                 default: return "No se pudo conectar. Intentá de nuevo.";
             }
         }

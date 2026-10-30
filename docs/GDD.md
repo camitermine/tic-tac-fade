@@ -1,6 +1,6 @@
 # GDD: Tic-Tac-Fade
 
-**Versión:** 0.10
+**Versión:** 0.11
 **Estado:** MVP v0.1.0
 **Fecha:** Octubre 2026
 **Fuente de verdad:** este archivo (`docs/GDD.md`). Cualquier espejo externo (Google Docs) es secundario.
@@ -21,6 +21,7 @@
 | 0.8 | Oct 2026 | Mensaje de versión distinta del rival (§5); el arranque de partida online pasa por un handshake Ready. |
 | 0.9 | Oct 2026 | Roadmap: "Opciones de sala" después del modo vs IA (§8). Indicadores sí/no (concreta el "modo memoria" de §4.1), tiempo de turno 10/20/30 s y tope de jugadas según el solver; "Normal" y "Difícil" como presets; la configuración la elige el host y viaja al cliente. |
 | 0.10 | Oct 2026 | Solver resuelto (§8.1): con juego perfecto, quien empieza tiene victoria forzada en 13 jugadas (plies) si abre en un borde; esquina o centro no fuerzan victoria. 116.074 posiciones alcanzables; el tope de 40 no corta ninguna línea forzada desde el inicio. Verificado por un solver independiente en Python (`tools/verify_solver.py`). |
+| 0.11 | Oct 2026 | Modo contra la IA (§8.2): niveles Fácil / Normal / Perfecta sobre la tabla del solver, evaluación con historial de repeticiones y tope, demora antes de jugar, el humano empieza la primera partida y la revancha alterna. Flujo: Menú → elección de nivel → Partida → Resultado (§4.3). |
 
 ---
 
@@ -143,6 +144,8 @@ Representación, aplicada a las fichas de **ambos jugadores**:
 ```
 Menú principal
   ├─ Jugar local       → Partida (local) → Resultado → Revancha | Menú
+  ├─ Jugar contra la IA → Elección de nivel (Fácil, Normal, Perfecta, volver)
+  │                         └─ nivel → Partida (vs IA) → Resultado → Revancha | Menú
   ├─ Crear sala        → Sala de espera (muestra el código, botón copiar, cancelar)
   │                         └─ al unirse el rival → Partida (online) → Resultado → Revancha | Menú
   └─ Unirse con código → Pantalla de ingreso de código (campo de texto, unirse, cancelar)
@@ -212,6 +215,23 @@ Menú principal
      - El tope de 40 no corta ninguna línea forzada desde el inicio: la más larga, desde cualquier posición alcanzable, mide 17.
      - Detalle en `docs/solver-results.md`; criterio en `docs/adr/0004-solver-assembly.md`.
 2. **Modo vs IA**, con dificultades basadas en el solver más ruido.
+   - **Implementado (v0.11).** Criterio técnico en `docs/adr/0005-ai-player.md`.
+   - **Quién juega qué:** el humano es X y la IA es O. El humano empieza la primera partida; cada revancha alterna quién empieza, como en el resto del juego (§3.1). Volver al menú reinicia la alternancia.
+   - **Niveles:** Fácil, Normal y Perfecta. Todos parten de la tabla del solver.
+     - Cada nivel tiene una **probabilidad de error**: con esa probabilidad juega una jugada legal al azar en vez de la mejor. Valores iniciales: Fácil 50 %, Normal 20 %, Perfecta 0 %.
+     - **Victoria inmediata:** Normal y Perfecta siempre la toman; Fácil puede dejarla pasar.
+     - **Derrota inmediata:** en Normal y Perfecta, la jugada al azar de un error nunca le deja al rival una victoria inmediata si alguna jugada lo evita; Fácil puede dejarla abierta.
+     - Los cuatro valores de cada nivel se ajustan en el asset de configuración, jugando.
+   - **Mejor jugada:** la IA no usa solo el valor de la tabla; lo corrige con la partida real.
+     - Una jugada que lleva a una posición que ya apareció dos veces es empate por repetición (§3.4).
+     - Una victoria o derrota forzada que no llega antes de `MaxTotalMoves` vale empate.
+     - Orden de preferencia: victoria inmediata; victoria forzada en la que el rival no tiene una respuesta que empate por repetición; victoria forzada con esa respuesta; seguir jugando sin victoria forzada para nadie; empate inmediato; derrota (la más larga).
+     - Así, **perdiendo** prefiere cualquier empate antes que la derrota, y **ganando** evita la repetición. Entre empates prefiere mantener viva la partida, para que el humano pueda equivocarse.
+     - La IA mira solo la respuesta siguiente del rival; más profundo no se analiza.
+   - **Ritmo:** la IA espera un tiempo corto y variable antes de jugar (entre 0,6 y 1,4 s, configurable). No hay timer de turno, como en local.
+   - **HUD:** "Tu turno" / "Turno de la IA". El resultado dice "¡Ganaste!", "Ganó la IA" o el empate con su motivo.
+   - **Salir** durante la partida vuelve al menú sin resultado, como en local.
+   - **IA no disponible:** si los datos de la IA faltan o no corresponden a las reglas del juego, "Jugar contra la IA" muestra "La IA no está disponible en esta versión del juego" en el menú y no avanza.
 3. **Opciones de sala.** Opciones independientes que elige el host al crear la sala:
    - **Indicadores de desvanecimiento:** sí / no.
    - **Tiempo de turno:** 10 / 20 / 30 s.

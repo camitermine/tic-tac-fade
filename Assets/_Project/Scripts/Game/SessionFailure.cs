@@ -34,5 +34,11 @@ namespace TicTacFade.Game
 
         /// <summary>The other device runs another protocol version of the game.</summary>
         VersionMismatch = 13,
+
+        /// <summary>
+        /// Not a session failure: the AI's table is missing or doesn't match
+        /// the rules. Shown in the menu through the same error line.
+        /// </summary>
+        AIUnavailable = 14,
     }
 }

@@ -969,6 +969,73 @@ Agregados de Cami:
 
 ---
 
+## [20] 2026-10-29 — Modo contra la IA, fase 2: menú, nivel, HUD y resultado (GDD §8.2)
+
+**Objetivo:** jugar contra la IA desde el menú: Menú → elección de nivel → Partida → Resultado → Revancha | Menú.
+
+**Pedido / prompt:** fase 2 de `docs/prompts/ai-player.md`, después de commitear la fase 1 como punto de control (`e3942f2`).
+
+**Qué hizo la IA:**
+- **Game:**
+  - `FlowState.AILevelSelect = 5`, al final del enum, con "volver" al menú.
+  - `MatchFlow`:
+    - `OpenAILevelSelect`, `CancelAILevelSelect` y `PlayAgainstAI(AIDifficulty)`;
+    - carga la tabla una vez desde un `TextAsset` serializado y hace avanzar la IA desde su `Update`;
+    - expone `IsVsAI`, `AIDifficulty` y `AISymbol`;
+    - al volver al menú (desde el resultado o con "Salir") pone otra vez los dos `LocalHumanPlayer`.
+  - `GameManager`: expone `AIConfig` y `Rules` (las reglas del tablero también antes de la primera partida, para validar la tabla).
+- **UI:**
+  - `AILevelScreen` (nuevo): tres botones de nivel y "Volver";
+  - `MenuScreen`: botón "Jugar contra la IA";
+  - `GameHud`: "Turno de la IA";
+  - `ResultScreen`: "¡Ganaste!" / "Ganó la IA".
+- **Escena** (`TicTacFadeGame.unity`), regenerada por el builder vía MCP y corrida dos veces sin duplicados:
+  - `MenuScreen/.../MenuButtons/PlayVsAIButton` (nuevo), debajo de "Jugar local";
+  - `AILevelScreen` (nuevo, con `SafeArea` en los cuatro bordes, `CanvasGroup` y `FlowScreenVisibility` en `AILevelSelect`), con `AILevelTitle`, `AILevelSubtitle`, `AIEasyButton`, `AINormalButton`, `AIPerfectButton` y `AILevelBackButton`;
+  - `MatchFlow.aiTable` apunta a `Config/AI/SolverTable.bytes`.
+- **Tests PlayMode:**
+  - `AIFlowTests` (nuevo, 6), sobre la escena real y con reloj manual:
+    - flujo completo menú → nivel → partida → resultado → revancha (empieza la IA y abre) → menú;
+    - cada botón arranca su nivel (3);
+    - "Volver" desde el nivel;
+    - "Salir" mientras la IA piensa cancela su jugada, y después "Jugar local" vuelve a ser con dos humanos y empieza X.
+  - `SceneWiringAndInputTests`: `AILevelScreen` sin referencias nulas y 7 `FlowScreenVisibility`. El chequeo de `MatchFlow` ahora cubre también `aiTable`.
+- **Docs:** GDD v0.11 (§4.3 y §8.2 con el diseño final), ADR 0005 aceptado con la sección de flujo.
+
+**Decisiones tomadas por la IA (para revisar):**
+- **Un solo estado nuevo.** La partida y el resultado reutilizan `Playing` y `Result`, como el online. Dos estados más habrían duplicado la visibilidad de las pantallas sin agregar comportamiento.
+- **El humano es siempre X y la IA O.** El símbolo no alterna; lo que alterna es quién empieza.
+- **Textos del resultado:** "¡Ganaste!" / "Ganó la IA", en vez de "¡Jugador X gana!".
+- **Tabla faltante o inválida:** error en consola y la partida no arranca. No había mensaje en pantalla, porque con el asset commiteado y el test Slow no debería pasar. Cami lo corrigió en la revisión (abajo).
+
+**Revisión humana:** fase 2 aprobada, con dos ajustes:
+- **Tabla de la IA faltante o inválida:** mensaje en pantalla y quedarse en el menú, como con los demás errores. Nunca un botón que no hace nada.
+  - La tabla se valida en `OpenAILevelSelect`, antes de mostrar los niveles.
+  - Valor nuevo `SessionFailure.AIUnavailable` = 14, con el texto "La IA no está disponible en esta versión del juego.", mostrado en `MenuStatus`.
+  - Test `UnusableAITable_ShowsErrorAndStaysInMenu`, con dos casos: referencia faltante y datos que no son una tabla. Verifica que el flujo se queda en el menú, que aparece el mensaje y que el error se limpia al pasar a otra pantalla.
+  - El nombre `SessionFailure` quedó corto para este caso; renombrarlo queda anotado como un cambio aparte.
+- **`CLAUDE.md`:** la regla de los "0 tests" se generalizó a EditMode y PlayMode, con el orden de reintentos (recompilar y filtrar por assembly; `init_timeout` mayor; Test Runner de Cami) y la nota de copiar el `job_id` exacto.
+
+Después de los ajustes: compila sin errores, PlayMode 106/106 (filtrado por assembly) y EditMode 49/49 en el primer intento.
+
+**Prueba manual (Cami):** jugó contra la IA en los tres niveles; anda bien. Cami pidió commitear la fase 2.
+
+**Verificación:**
+- Compila sin errores; la consola quedó limpia.
+- PlayMode 104/104 vía MCP, filtrado por assembly (98 anteriores + 6 nuevos).
+- EditMode 49/49 vía MCP, Slow incluidos. **Las dos primeras corridas fallaron al inicializar** ("tests did not start within timeout", 0 tests), una sin filtro y otra filtrada por assembly con recompilación previa. La escena no estaba *dirty*. La tercera, sin filtro y con `init_timeout` de 120 s, corrió completa. No se contaron las fallidas.
+- **Falta probar a mano:**
+  - el Simulator en los dos perfiles de siempre (menú con un botón más y la pantalla de nivel, dentro de la safe area);
+  - una partida contra cada nivel en el dispositivo, para sentir la demora y ajustar los porcentajes de error.
+
+**Aprendizajes:**
+- El fallo de inicialización del runner por MCP no es exclusivo de PlayMode: también pasó en EditMode, en una corrida justo después de otra de PlayMode. Reintentar con un `init_timeout` mayor alcanzó.
+- Hay que copiar el `job_id` exacto del resultado de `run_tests`: varias consultas a ids mal transcritos devolvieron "Unknown job_id".
+
+**Commit(s):** — (sin commitear; Cami revisa y commitea).
+
+---
+
 ## [0] 2026-09-22 — Definición del MVP y setup de documentación
 
 **Objetivo:** revisar el GDD v0.1, cerrar las decisiones pendientes y preparar el repo para el trabajo con agentes.

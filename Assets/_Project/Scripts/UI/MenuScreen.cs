@@ -5,7 +5,7 @@ using TicTacFade.Game;
 namespace TicTacFade.UI
 {
     /// <summary>
-    /// Main menu: local play, create room, join with code. While a room is
+    /// Main menu: local play, play against the AI, create room, join with code. While a room is
     /// being created every button is disabled and the status line shows
     /// "Conectando..."; a failure shows up in the same line.
     /// </summary>
@@ -13,6 +13,7 @@ namespace TicTacFade.UI
     {
         [SerializeField] MatchFlow flow;
         [SerializeField] Button playLocalButton;
+        [SerializeField] Button playVsAIButton;
         [SerializeField] Button createRoomButton;
         [SerializeField] Button joinByCodeButton;
         [SerializeField] Text statusLabel;
@@ -20,6 +21,7 @@ namespace TicTacFade.UI
         void Awake()
         {
             playLocalButton.onClick.AddListener(flow.PlayLocal);
+            playVsAIButton.onClick.AddListener(flow.OpenAILevelSelect);
             createRoomButton.onClick.AddListener(flow.CreateRoom);
             joinByCodeButton.onClick.AddListener(flow.OpenJoinByCode);
             flow.BusyChanged += OnBusyChanged;
@@ -31,6 +33,7 @@ namespace TicTacFade.UI
         {
             if (flow == null) return;
             playLocalButton.onClick.RemoveListener(flow.PlayLocal);
+            playVsAIButton.onClick.RemoveListener(flow.OpenAILevelSelect);
             createRoomButton.onClick.RemoveListener(flow.CreateRoom);
             joinByCodeButton.onClick.RemoveListener(flow.OpenJoinByCode);
             flow.BusyChanged -= OnBusyChanged;
@@ -45,6 +48,7 @@ namespace TicTacFade.UI
         {
             bool busy = flow.IsBusy;
             playLocalButton.interactable = !busy;
+            playVsAIButton.interactable = !busy;
             createRoomButton.interactable = !busy;
             joinByCodeButton.interactable = !busy;
             statusLabel.text = busy ? SessionFailureMessages.Connecting : SessionFailureMessages.ToText(flow.LastFailure);

@@ -83,6 +83,8 @@ namespace TicTacFade.UI
             var evt = result.BoardEnd;
             switch (evt.Reason)
             {
+                case GameEndReason.Win when flow.IsVsAI:
+                    return evt.Winner == flow.AISymbol ? "Ganó la IA\nTres en línea" : "¡Ganaste!\nTres en línea";
                 case GameEndReason.Win:
                     return $"¡Jugador {(evt.Winner == Occupant.X ? "X" : "O")} gana!\nTres en línea";
                 case GameEndReason.DrawByRepetition:
