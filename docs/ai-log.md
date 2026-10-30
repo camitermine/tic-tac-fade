@@ -1094,3 +1094,52 @@ After the adjustments: compiles with no errors, PlayMode 106/106 (filtered by as
 **Learnings:** keeping the version in the configurator's constants makes the bump a one-line change and a two-field diff.
 
 **Commit(s):** this commit (`chore: bump version to 0.2.0`).
+
+---
+
+## [22] 2026-10-30 — Spike: neon style with URP Bloom (in progress)
+
+**Goal:** validate on the phone that the neon glow works before producing the art assets. References: `docs/art-refs/neon-board.jpg` and `neon-menu.jpg`.
+
+**Request / prompt:** Cami's spike brief, with an approved plan: Canvas to Screen Space - Camera, URP Bloom in a Volume, HDR on; simple white SVGs (X, O, grid line) rasterized at 512 px with the color as a tint; a way to give UI colors an intensity above 1; applied only to the board and pieces; FPS measured on the device with and without Bloom. Core and Game untouched.
+
+Cami's answers to the plan:
+- SVG sources as committed text files; try the SVG importer's "Textured Sprite" before writing a rasterizing menu.
+- Grid line as a 9-sliced sprite so the round caps don't stretch.
+- If white text bleeds bloom at threshold 1, raise it slightly instead of darkening the UI.
+- Rasterize with the builtin Vector Graphics module (no external dependency).
+- HDR intensity: option A (UI shader with `_Intensity`); per-element intensity (A′) later.
+- Switch the whole Canvas (the menu will be neon too) and verify taps, SafeArea and draw order on the other screens.
+- `targetFrameRate = 60` for the whole game, as its own commit.
+- If the glow works on the phone, merge as the first step of the art pass; the FPS overlay stays out of `main`; the ADR is written at merge time.
+
+**What the AI did:**
+- **`FrameRateBootstrap`** (UI, own commit): `Application.targetFrameRate = 60` before the scene loads. There was no bootstrap class and Game is off limits, so it is a `RuntimeInitializeOnLoadMethod` in the UI layer.
+- **SVG sources** (`Art/Neon/Source/`): `neon_x.svg`, `neon_o.svg`, `neon_grid_line.svg` (a 512×64 capsule), white strokes with round caps, no glow.
+- **Rasterization:** the builtin SVG importer in Textured Sprite mode was enough, so there is no menu. Settings (applied through `SerializedObject` on the importer, stored in the `.meta` files): 512 px, 8× antialiasing, viewport preserved, bilinear, full-rect mesh, and a 64 px left/right border on the grid line for the 9-slice. The texture lives inside each `.svg` asset; there are no loose PNG files.
+- **`TicTacFade/UI Neon` shader** (`Art/Neon/UI-Neon.shader`): a copy of `UI/Default` (stencil, clip rect, alpha clip) that multiplies the output RGB by `_Intensity`. One shared material, `NeonUI.mat` (2.5).
+- **Builder:**
+  - Canvas in Screen Space - Camera with the Main Camera; camera with HDR, post-processing and the `#0B1026` background;
+  - global `PostProcessVolume` with `NeonVolumeProfile.asset`: Bloom threshold 1, intensity 1.5, scatter 0.7, no high-quality filtering. The profile and material are created once and then kept, so Inspector tuning survives a rebuild;
+  - 4 grid lines on the board (`ignoreLayout`, 9-sliced, `pixelsPerUnitMultiplier` so the caps stay round on a thinner line).
+- **`CellView`:** neon sprites tinted cyan `#22E6F0` / magenta `#FF3BD4` instead of the "X"/"O" text; life alpha, the life-2 pulse, the ghost and the ghost victim move from the cell background to the piece; the background is invisible and only catches taps.
+- **FPS overlay** (own commit, SPIKE ONLY, to be reverted before the merge): average FPS and worst frame over 2 s, and a button that toggles the post-process volume.
+- **Test `CanvasCameraTests` (2):** the canvas renders through a camera within its clip range with HDR; real raycasts from each button's on-screen position reach the button on the menu, level choice, match (cells and "Salir") and result screens, and every visible screen fills `Screen.safeArea`. The existing flow tests call `onClick` directly and would not notice a broken event camera.
+
+**Findings:**
+- In the Editor, with both queues full and a ghost preview, the board and pieces glow and the white text, buttons and HUD don't: threshold 1 is enough, no need to raise it. With the volume off the halos disappear, so the glow comes from Bloom, not from the sprite.
+- Setting the SVG importer's properties by reflection doesn't persist; going through `SerializedObject` does.
+- After Play mode and the test run the Editor re-saved the scene with layout-driven values (anchors and sizes set by layout groups, best-fit font sizes). It was discarded so the committed scene stays exactly the builder's output.
+
+**Human review:** pending — the device check.
+
+**Verification:**
+- Compiles with no errors; console clean.
+- Builder run twice with no duplicates.
+- EditMode 49/49. PlayMode 108/108 (106 + 2), after a first run that reported 0 tests and was retried per CLAUDE.md (recompile, filter by assembly).
+- **Pending (Cami), on the phone:** an APK of this branch; a local match with pieces on the board; 60 s with Bloom and 60 s without (toggle in the overlay), noting average FPS and worst frame; a capture of each. FPS in the Editor is meaningless (the Editor stalls between MCP calls).
+
+**Learnings:**
+- A test that goes through the real raycaster is the cheapest guard for a render-mode change: flow tests that call `onClick` would pass with a canvas no one can tap.
+
+**Commit(s):** `1d78853`, `2449bb8`, `82c44c4` (spike only), `2f5f6bc`, and this entry.
