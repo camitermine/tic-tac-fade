@@ -1,1068 +1,1070 @@
 # AI Iteration Log
 
-Registro del proceso de desarrollo asistido por IA. Una entrada por iteración, la más reciente arriba.
+> **Language note:** this project was developed in Spanish. This log, like the rest of the documentation, was translated to English on 2026-10-29; the Spanish originals are preserved in the git history. Quoted in-game UI strings stay in Spanish, because they are the game's current text.
 
-El objetivo es que quede visible **qué se le pidió a la IA, qué produjo y qué decidió o corrigió la supervisora**.
+Record of the AI-assisted development process. One entry per iteration, the most recent at the top.
 
-## Plantilla
+The goal is to make visible **what the AI was asked, what it produced and what the supervisor decided or corrected**.
+
+## Template
 
 ```markdown
-## [N] YYYY-MM-DD — Título corto
+## [N] YYYY-MM-DD — Short title
 
-**Objetivo:** qué se quería lograr.
-**Pedido / prompt:** resumen del pedido (o link al plan aprobado).
-**Qué hizo la IA:** archivos, tests y cambios principales.
-**Revisión humana:** qué se aceptó, qué se corrigió y por qué.
-**Verificación:** compila / tests / probado en device.
-**Aprendizajes:** qué cambiaría en las instrucciones, skills o CLAUDE.md a partir de esto.
-**Commit(s):** hash o PR.
+**Goal:** what was meant to be achieved.
+**Request / prompt:** summary of the request (or link to the approved plan).
+**What the AI did:** files, tests and main changes.
+**Human review:** what was accepted, what was corrected and why.
+**Verification:** compiles / tests / tested on device.
+**Learnings:** what would change in the instructions, skills or CLAUDE.md as a result of this.
+**Commit(s):** hash or PR.
 ```
 
 ---
 
-## [1] 2026-09-22 — Verificación de la extracción de Core y fix de test
+## [1] 2026-09-22 — Verification of the Core extraction and test fix
 
-**Objetivo:** retomar el trabajo en curso de la rama `feat/core-extraction` (migración de `Assets/Scripts` a `Assets/_Project/Scripts` con separación en asmdefs `TicTacFade.Core`/`Game`/`UI`, más `RulesEngine`, `GameState`, `GameConfig`, eventos y tests de Core) y verificar que compila y que los tests pasan antes de seguir.
+**Goal:** pick up the work in progress on the `feat/core-extraction` branch (migration from `Assets/Scripts` to `Assets/_Project/Scripts` with the split into the `TicTacFade.Core`/`Game`/`UI` asmdefs, plus `RulesEngine`, `GameState`, `GameConfig`, events and Core tests) and verify that it compiles and that the tests pass before continuing.
 
-**Pedido / prompt:** continuación de sesión sin instrucción nueva; se interpretó como "verificar el estado actual del trabajo pendiente en la rama".
+**Request / prompt:** session continuation with no new instruction; it was interpreted as "verify the current state of the pending work on the branch".
 
-**Qué hizo la IA:**
-- Revisó la consola de Unity vía MCP: 0 errores/warnings de compilación.
-- Corrió los 33 tests EditMode de `TicTacFade.Core.Tests`: 1 falla en `RulesEngineConfigurableTests.Apply_NonDefaultConfig_FifoStillWorks` (esperaba `ActiveCount(X) == 4`, dio 3).
-- Usó `execute_code` (MCP) para reproducir la secuencia de jugadas del test fuera del test runner y aisló la causa: las celdas de O en el test (`12,13,14,15`) forman una línea horizontal ganadora (fila 3 de un tablero 4x4, `WinLength=3`), así que la partida terminaba por victoria de O antes de que X llegara a su 4ª ficha; las jugadas siguientes quedaban rechazadas (`GameAlreadyEnded`) y la cola de X nunca crecía a 4. El bug estaba en los datos del test, no en `RulesEngine`/`WinChecker`.
-- Corrigió `RulesEngineConfigurableTests.cs`: reemplazó las celdas de O por `2,4,11,13` (patrón tipo "4 reinas no atacantes", sin 3 en línea posible) y agregó un comentario explicando por qué. Verificó la nueva secuencia con `execute_code` antes de tocar el archivo de test.
-- Volvió a compilar y correr la suite completa: 33/33 tests OK, 0 errores/warnings.
+**What the AI did:**
+- Checked the Unity console via MCP: 0 compilation errors/warnings.
+- Ran the 33 EditMode tests of `TicTacFade.Core.Tests`: 1 failure in `RulesEngineConfigurableTests.Apply_NonDefaultConfig_FifoStillWorks` (expected `ActiveCount(X) == 4`, got 3).
+- Used `execute_code` (MCP) to reproduce the test's move sequence outside the test runner and isolated the cause: O's cells in the test (`12,13,14,15`) form a winning horizontal line (row 3 of a 4x4 board, `WinLength=3`), so the match ended with O's win before X reached its 4th piece; the following moves were rejected (`GameAlreadyEnded`) and X's queue never grew to 4. The bug was in the test data, not in `RulesEngine`/`WinChecker`.
+- Fixed `RulesEngineConfigurableTests.cs`: replaced O's cells with `2,4,11,13` (a "4 non-attacking queens" kind of pattern, with no possible 3 in a line) and added a comment explaining why. Verified the new sequence with `execute_code` before touching the test file.
+- Recompiled and ran the full suite: 33/33 tests OK, 0 errors/warnings.
 
-**Revisión humana:**
-- Decisiones tomadas en modo plan (sesión anterior, previa a conectar el MCP de Unity):
-  - Banner de fin de partida genérico, basado en el enum `GameEndReason` (no un mensaje distinto hardcodeado por cada caso).
-  - No crear todavía el asmdef/carpeta `Net/`.
-  - No mover `Assets/Scenes/` en esta tarea.
-- Cambios pedidos por Cami sobre el plan propuesto por la IA:
-  - `PositionKey` como clave exacta (packing de bits), en vez de un hash FNV.
-  - `RulesEngine.IsLegal` público.
-  - `InternalsVisibleTo` para que los tests puedan acceder a `PositionCounts` sin exponerlo como público.
-  - Agregar tests de inmutabilidad del estado y de orden de eventos.
-  - Commitear antes de regenerar la escena.
-- Test que falló al verificar: `RulesEngineConfigurableTests.Apply_NonDefaultConfig_FifoStillWorks`. Causa raíz: las celdas de O de la secuencia del test (`12,13,14,15`) formaban una línea horizontal ganadora en un tablero 4x4 con `WinLength=3`, así que la partida terminaba por victoria de O antes de que la secuencia llegara a la 4ª ficha de X. Se modificó el test (celdas de O reemplazadas por `2,4,11,13`); no se modificó `RulesEngine.cs` ni `WinChecker.cs`.
+**Human review:**
+- Decisions made in plan mode (previous session, before connecting the Unity MCP):
+  - Generic end-of-match banner, based on the `GameEndReason` enum (not a different hardcoded message for each case).
+  - Don't create the `Net/` asmdef/folder yet.
+  - Don't move `Assets/Scenes/` in this task.
+- Changes Cami asked for on the plan proposed by the AI:
+  - `PositionKey` as an exact key (bit packing), instead of an FNV hash.
+  - Public `RulesEngine.IsLegal`.
+  - `InternalsVisibleTo` so the tests can access `PositionCounts` without exposing it as public.
+  - Add tests for state immutability and event order.
+  - Commit before regenerating the scene.
+- Test that failed during verification: `RulesEngineConfigurableTests.Apply_NonDefaultConfig_FifoStillWorks`. Root cause: O's cells in the test sequence (`12,13,14,15`) formed a winning horizontal line on a 4x4 board with `WinLength=3`, so the match ended with O's win before the sequence reached X's 4th piece. The test was modified (O's cells replaced with `2,4,11,13`); `RulesEngine.cs` and `WinChecker.cs` were not modified.
 
-**Verificación:** compila sin errores (consola Unity vía MCP) y los 33 tests EditMode de `TicTacFade.Core.Tests` pasan.
+**Verification:** compiles with no errors (Unity console via MCP) and the 33 EditMode tests of `TicTacFade.Core.Tests` pass.
 
-**Aprendizajes:** al escribir tests con `GameConfig` no-default (winLength distinto del boardSize), conviene elegir a mano las celdas del jugador "de relleno" para que no queden colineales, o agregar un helper de test que arme secuencias garantizadas sin línea ganadora (p. ej. patrón de N-reinas) para evitar este tipo de falso negativo.
+**Learnings:** when writing tests with a non-default `GameConfig` (winLength different from boardSize), it is worth picking the "filler" player's cells by hand so they aren't collinear, or adding a test helper that builds sequences guaranteed to have no winning line (e.g. an N-queens pattern) to avoid this kind of false negative.
 
-**Commit(s):** — (sin commitear; Cami revisa y commitea).
+**Commit(s):** — (not committed; Cami reviews and commits).
 
-**Pendiente:** cerrado, ver entrada [4].
-
----
-
-## [2] 2026-09-22 — Helper para endurecer tests de Core contra secuencias contaminadas
-
-**Objetivo:** evitar que se repita el problema de la entrada [1] (una jugada de "relleno" que sin querer completa una línea o termina la partida, y arruina en silencio la posición que el test quería armar).
-
-**Pedido / prompt:** Cami pidió (1) un helper que aplique una secuencia de jugadas y falle si alguna produce `MoveRejectedEvent` o si la partida termina antes de lo previsto, (2) usarlo en los tests que arman posiciones por secuencia, y (3) comentar en `RulesEngineConfigurableTests` por qué las celdas de O son `2,4,11,13`. Restricción explícita: no cambiar ninguna regla ni ninguna aserción existente que hoy pase.
-
-**Qué hizo la IA:**
-- Creó `Assets/_Project/Tests/EditMode/MoveSequence.cs` (clase interna `MoveSequence`, método `Apply(GameState, params Move[])`): aplica las jugadas en orden y usa `Assert.Fail` si alguna intermedia devuelve `MoveRejectedEvent`, o si `state.IsOver` se vuelve `true` antes de la última jugada de la secuencia (la última sí puede terminar la partida a propósito, para no romper tests que arman una posición y ganan en el mismo golpe).
-- Lo usó en los tramos de "armado de posición" (secuencias de `RulesEngine.Apply` sin aserciones intercaladas, seguidas de un Act/Assert separado) de: `RulesEngineFifoTests` (2 tests), `RulesEngineWinTests` (2 tests), `RulesEngineMoveValidationTests` (2 tests) y `RulesEngineConfigurableTests` (2 tests).
-- **No** lo aplicó donde la secuencia ya tenía aserciones intercaladas jugada por jugada (`RulesEngineImmutabilityAndEventsTests.Apply_EventOrder_...`, los tests de repetición de `RulesEngineDrawTests`, `GameInvariantTests.PlayLongMatch_...`, `RulesEngineFifoTests.GetLife_...`): colapsar esas secuencias en el helper habría significado borrar aserciones que hoy pasan, algo que Cami pidió explícitamente no hacer. Intentó una vez en `RulesEngineImmutabilityAndEventsTests` y lo revirtió al notar que quitaba 6 `Assert.IsFalse(state.IsOver)` existentes.
-- Amplió el comentario en `RulesEngineConfigurableTests.Apply_NonDefaultConfig_FifoStillWorks` explicando el patrón de 4 reinas no atacantes de las celdas de O (2,4,11,13) y por qué hacía falta (referencia al bug de la entrada [1]).
-- No tocó `RulesEngine.cs`, `WinChecker.cs` ni ninguna regla del Core.
-
-**Revisión humana:** pendiente (a validar por Cami).
-
-**Verificación:** compila sin errores/warnings (consola Unity vía MCP) y los 33 tests EditMode de `TicTacFade.Core.Tests` siguen pasando 33/33 después de los cambios.
-
-**Aprendizajes:** cuando un test "arma una posición" con una secuencia de jugadas y el foco real está en la jugada final, conviene separar explícitamente el armado (que no debería poder terminar la partida ni ser rechazado) del Act — así una contaminación como la de la entrada [1] falla ruidosamente en el armado en lugar de producir una aserción confusa más adelante. Un test con datos mal elegidos puede disparar otra regla sin querer y fallar con un mensaje que no apunta a la causa; los tests que arman escenarios por secuencia de jugadas deben verificar primero su propia premisa.
-
-**Commit(s):** — (sin commitear; Cami revisa y commitea).
+**Pending:** closed, see entry [4].
 
 ---
 
-## [3] 2026-09-22 — Todo el texto de los .cs en inglés
+## [2] 2026-09-22 — Helper to harden Core tests against contaminated sequences
 
-**Objetivo:** cumplir la convención de `CLAUDE.md` de que el código C# va en inglés, que hasta ahora no se había respetado (comentarios, XML docs y mensajes de `Assert.Fail`/log en español en toda la rama).
+**Goal:** prevent the problem from entry [1] from happening again (a "filler" move that accidentally completes a line or ends the match, and silently ruins the position the test meant to build).
 
-**Pedido / prompt:** Cami pidió corregir, antes del commit, todo el texto en español que quedó en archivos `.cs` de la rama (comentarios, XML docs, mensajes de `Assert.Fail`/log), sin tocar lógica ni nombres; precisar la línea de convenciones de `CLAUDE.md` para que sea explícita sobre qué texto va en inglés; y registrar en el ai-log por qué se precisó la regla.
+**Request / prompt:** Cami asked for (1) a helper that applies a sequence of moves and fails if any produces a `MoveRejectedEvent` or if the match ends earlier than planned, (2) using it in the tests that build positions by sequence, and (3) commenting in `RulesEngineConfigurableTests` why O's cells are `2,4,11,13`. Explicit constraint: don't change any rule or any existing assertion that passes today.
 
-**Qué hizo la IA:**
-- Tradujo al inglés todo comentario, XML doc y mensaje de `Assert.Fail`/`Debug.Log`/excepción en los 30 archivos `.cs` de `Assets/_Project/` (Core, Game, UI, Editor y Tests), sin cambiar lógica ni identificadores.
-- Dejó sin tocar el texto de UI que ve el jugador dentro del juego (`GameHud.cs`: "Turno: Jugador X", "Empate por repetición de posición", etc., y el label "Reintentar" del botón de reinicio en `TicTacFadeSceneBuilder.cs`): es contenido del producto, no texto de desarrollador, y la instrucción de Cami listaba específicamente comentarios/XML docs/mensajes de aserción y log, no texto de UI.
-- Verificó con `grep` (acentos, ñ, signos ¿¡, y palabras clave en español) que no quedó texto fuera de esas strings de UI.
-- Precisó la línea de convenciones de `CLAUDE.md`: "All text inside `.cs` files goes in English: identifiers, comments, XML docs, and assertion/log messages. Design documentation (`docs/`) goes in Spanish. Commit messages are in English."
-- Recompiló y corrió la suite completa: 33/33 tests EditMode de `TicTacFade.Core.Tests` OK, 0 errores/warnings.
+**What the AI did:**
+- Created `Assets/_Project/Tests/EditMode/MoveSequence.cs` (internal class `MoveSequence`, method `Apply(GameState, params Move[])`): it applies the moves in order and uses `Assert.Fail` if any intermediate one returns a `MoveRejectedEvent`, or if `state.IsOver` becomes `true` before the last move of the sequence (the last one can end the match on purpose, so as not to break tests that build a position and win in the same stroke).
+- Used it in the "position building" stretches (sequences of `RulesEngine.Apply` with no interleaved assertions, followed by a separate Act/Assert) of: `RulesEngineFifoTests` (2 tests), `RulesEngineWinTests` (2 tests), `RulesEngineMoveValidationTests` (2 tests) and `RulesEngineConfigurableTests` (2 tests).
+- Did **not** apply it where the sequence already had assertions interleaved move by move (`RulesEngineImmutabilityAndEventsTests.Apply_EventOrder_...`, the repetition tests in `RulesEngineDrawTests`, `GameInvariantTests.PlayLongMatch_...`, `RulesEngineFifoTests.GetLife_...`): collapsing those sequences into the helper would have meant deleting assertions that pass today, something Cami explicitly asked not to do. It tried once in `RulesEngineImmutabilityAndEventsTests` and reverted it on noticing it removed 6 existing `Assert.IsFalse(state.IsOver)`.
+- Expanded the comment in `RulesEngineConfigurableTests.Apply_NonDefaultConfig_FifoStillWorks` explaining the 4 non-attacking queens pattern of O's cells (2,4,11,13) and why it was needed (reference to the bug in entry [1]).
+- Didn't touch `RulesEngine.cs`, `WinChecker.cs` or any Core rule.
 
-**Revisión humana:** pendiente (a validar por Cami).
+**Human review:** pending (to be validated by Cami).
 
-**Verificación:** compila sin errores/warnings (consola Unity vía MCP) y los 33 tests EditMode de `TicTacFade.Core.Tests` pasan.
+**Verification:** compiles with no errors/warnings (Unity console via MCP) and the 33 EditMode tests of `TicTacFade.Core.Tests` keep passing 33/33 after the changes.
 
-**Aprendizajes:** la regla de idioma estaba en `CLAUDE.md` pero era ambigua sobre XML docs y mensajes de aserción; se precisó tras detectarse la desviación en el review.
+**Learnings:** when a test "builds a position" with a sequence of moves and the real focus is on the final move, it is worth explicitly separating the building (which shouldn't be able to end the match or be rejected) from the Act — that way a contamination like the one in entry [1] fails loudly in the building instead of producing a confusing assertion later. A test with poorly chosen data can trigger another rule by accident and fail with a message that doesn't point to the cause; tests that build scenarios by move sequence must first verify their own premise.
 
-**Commit(s):** — (sin commitear; Cami revisa y commitea).
-
----
-
-## [4] 2026-09-22 — Reorganización de Assets/Scenes/ y fix de escena stale
-
-**Objetivo:** cerrar el pendiente de la entrada [1]: mover `Assets/Scenes/` a `Assets/_Project/Scenes/`, actualizar Build Settings y sacar el path hardcodeado de `TicTacFadeSceneBuilder.cs`.
-
-**Pedido / prompt:** Cami pidió mover `Assets/Scenes/` (con sus `.meta`) a `Assets/_Project/Scenes/`, actualizar Build Settings, eliminar el path hardcodeado del builder (que las rutas de escena salgan de un único lugar, constante o Build Settings), y verificar que la escena abre, que el juego corre y que el builder sigue funcionando. Alcance cerrado: sin tocar scripts de gameplay ni UI. Sobre el plan propuesto, Cami pidió dos cambios: (1) `SampleScene.unity` (leftover del template, sin referencias, primera en el orden de build) no se migra: se borra junto con su entrada en Build Settings, que queda con una sola entrada; (2) verificar al final con `git status --porcelain` que la escena figura como rename y no como delete+add.
-
-**Qué hizo la IA:**
-- Movió `Assets/Scenes/TicTacFadeGame.unity` a `Assets/_Project/Scenes/TicTacFadeGame.unity` con `manage_asset(action="move")` (preserva GUID y `.meta` vía `AssetDatabase.MoveAsset`, no filesystem a mano).
-- Borró `Assets/Scenes/SampleScene.unity` (+ `.meta`) con `manage_asset(action="delete")`, y borró la carpeta `Assets/Scenes/` ya vacía.
-- Actualizó Build Settings a una sola entrada (`Assets/_Project/Scenes/TicTacFadeGame.unity`) con `manage_build(action="scenes")`.
-- Actualizó `TicTacFadeSceneBuilder.cs` línea 18: `ScenePath` ahora apunta a `Assets/_Project/Scenes/TicTacFadeGame.unity` (sigue siendo la única constante de la que salen los 3 usos: `SaveScene`, el chequeo de Build Settings y el log).
-- Al probar Play Mode encontró 2 `NullReferenceException` (`BoardView.cs:27`, `GameHud.cs:25`, ambas en `Awake` al hacer `gameManager.StateChanged += ...`). Diagnosticó la causa leyendo el YAML de la escena (solo lectura): la escena estaba **stale**, construida antes del refactor de Core — el `GameManager` serializado tenía `m_EditorClassIdentifier: TicTacFade.Gameplay.GameManager` con campos viejos `boardView`/`hud` que ya no existen en la clase actual (`TicTacFade.Game.GameManager`), y `BoardView`/`GameHud` no tenían el campo `gameManager` serializado en absoluto (solo lo tiene el `GameManager.cs` actual la relación inversa). No era un bug causado por el move: el contenido de la escena no se toca al moverla, así que ya estaba rota desde el 17/9, sin testear en Play mode hasta ahora.
-- Re-ejecutó el builder (`Tic-Tac-Fade/Build Placeholder Scene (1v1)`), que regenera la escena desde las clases actuales y resolvió el problema: 0 errores en Play mode después.
-- Verificó Build Settings después del re-run del builder: sigue en 1 sola entrada (no duplicó), confirmando que el chequeo `alreadyInBuild` funciona con la constante corregida.
-- Corrió `git status --porcelain` (con `git add -A` para que se calcule similitud, después revertido con `git reset` para no dejar nada stageado): `TicTacFadeGame.unity`, su `.meta` y `Assets/Scenes.meta`→`Assets/_Project/Scenes.meta` figuran como **R** (rename); `SampleScene.unity` + `.meta` figuran como **D** (deleted). El `.meta` viajó junto al archivo, como corresponde.
-- No tocó `GameManager.cs`, `BoardView.cs`, `CellView.cs`, `GameHud.cs` ni `RestartButton.cs`.
-- Dejó sin tocar `ProjectSettings/ProjectSettings.asset` (`templateDefaultScene: Assets/Scenes/SampleScene.unity`): metadata inerte del template original, no la lee ni el juego ni el build, y no hay tool de MCP que exponga ese campo puntual (editar ese YAML a mano violaría la regla de CLAUDE.md).
-
-**Revisión humana:** pendiente (a validar por Cami).
-
-**Verificación:** escena carga sin errores (jerarquía con `EventSystem`/`Canvas`/`GameManager` intacta); Play mode sin excepciones tras regenerar la escena; builder recreó la escena en la ruta nueva sin duplicar la entrada de Build Settings; `git status --porcelain` confirma rename (no delete+add) en la escena movida.
-
-**Aprendizajes:** una escena `.unity` puede quedar desincronizada en silencio de un refactor de scripts (los campos serializados viejos simplemente se pierden al deserializar bajo la clase nueva, sin error de compilación) — vale la pena probar Play mode después de un refactor de Core/Game/UI, no solo compilar y correr tests de EditMode. Mover un asset con `manage_asset(move)` no reescribe su contenido, así que un bug de este tipo sobrevive intacto al move y hay que diagnosticarlo aparte. El commit de la extracción del Core quedó con la escena serializada desactualizada (NullReference en Play mode), detectado recién en la iteración siguiente. El smoke test manual en Play Mode es obligatorio antes de cerrar cualquier tarea que toque tipos serializados, y regenerar la escena con el builder es parte de esa verificación.
-
-**Commit(s):** — (sin commitear; Cami revisa y commitea).
+**Commit(s):** — (not committed; Cami reviews and commits).
 
 ---
 
-## [5] 2026-09-22 — UI parte 1: escena y HUD sanos (cámara, safe area, layout)
+## [3] 2026-09-22 — All the text in the .cs files in English
 
-**Objetivo:** `docs/promps/ui-parte-1.md` — hacer idempotente el builder de escena, agregar una Main Camera, y rehacer el layout del HUD con anchors/layout groups + safe area (portrait, Canvas Scaler 1080x1920 match 0.5), verificado con el Simulator en 16:9 y 20:9. Fuera de alcance: indicadores de vida, ghost piece y línea ganadora (parte 2).
+**Goal:** comply with the `CLAUDE.md` convention that C# code goes in English, which had not been respected so far (comments, XML docs and `Assert.Fail`/log messages in Spanish across the whole branch).
 
-**Pedido / prompt:** Cami reportó HUD con textos superpuestos y una hipótesis propia: `TicTacFadeSceneBuilder` no sería idempotente y al re-ejecutarlo duplicaría objetos del HUD, dejando labels viejos sin actualizar encima de los vivos. Pidió verificar esa hipótesis por MCP antes de tocar nada. Aprobó el plan con 4 ajustes: (1) el lock de portrait no es opcional, lo pide GDD §2.3; (2) `SafeArea.Apply()` debía fijar también `offsetMin`/`offsetMax` a cero explícitamente; (3) agregar esta entrada de ai-log documentando el descarte de su hipótesis con evidencia; (4) anotar como deuda de parte 2 que el aviso de desvanecimiento sigue concatenado en el mismo `Text` que el contador.
+**Request / prompt:** Cami asked to fix, before the commit, all the Spanish text left in the branch's `.cs` files (comments, XML docs, `Assert.Fail`/log messages), without touching logic or names; to make the `CLAUDE.md` conventions line explicit about which text goes in English; and to record in the ai-log why the rule was made more precise.
 
-**Qué hizo la IA:**
-- **Verificó la hipótesis de duplicación (descartada con evidencia) antes de tocar nada:** inspeccionó la jerarquía viva por MCP (`get_hierarchy`, `find_gameobjects`) y el YAML de la escena guardada — exactamente 1 `TurnLabel`, 1 `CountX`, 1 `CountO`, sin huérfanos. Causa estructural: `BuildScene()` siempre arranca con `EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single)`, que borra la escena entera antes de reconstruir; no hay ningún camino de código que pueda duplicar objetos entre corridas. La causa real del "se pisan" era otra: `GameHud.cs` concatenaba el aviso de desvanecimiento dentro del mismo `Text` que el contador, en una caja fija sin overflow configurado.
-- Agregó `CreateMainCamera()` a `TicTacFadeSceneBuilder.cs` (Camera + AudioListener + `UniversalAdditionalCameraData` para URP, tag `MainCamera`, `clearFlags=SolidColor`, fondo casi negro).
-- Rehizo `CreateHud()`: `SafeAreaHUD` (usa el componente **built-in** `UnityEngine.UI.SafeArea` de Unity, no uno hecho a mano — se había escrito un `SafeArea.cs` propio primero, pero el compilador marcó ambigüedad de nombres contra `UnityEngine.UI.SafeArea` ya existente en el paquete, y al inspeccionarlo por reflection resultó ser una implementación más completa que la propia; se borró el script custom y se usó el de Unity) → `HUD` (`VerticalLayoutGroup` + `ContentSizeFitter` vertical) → `TurnLabel` + `CountsRow` (`HorizontalLayoutGroup`) → `CountX`/`CountO`, todo con `Wrap`/`Overflow` en vez de cajas fijas.
-- Bloqueó orientación portrait vía `PlayerSettings` (API de Unity, no edición de YAML): `defaultInterfaceOrientation=Portrait`, autorotate a landscape/portrait-invertido deshabilitados. Es requerimiento de GDD §2.3, no una inferencia.
-- Acortó el aviso de desvanecimiento en `GameHud.cs` de "¡Aviso de desvanecimiento!" a "¡Desvaneciendo!" (pedido de Cami tras ver el desborde en un dispositivo angosto) — reduce el ancho de texto necesario, no reemplaza el fix de layout.
-- **Encontró y corrigió 2 bugs reales de layout anidado durante la verificación en el Simulator** (no estaban en el plan original, aparecieron al probar en `Wide Pill Cutout 1200x2640`, con captura de Cami mostrando el texto cortado y apilado verticalmente):
-  1. `CountsRow` (un `HorizontalLayoutGroup`, hijo de `HUD`) no tenía `flexibleWidth` en su propio `LayoutElement`: al ser también un `ILayoutElement`, reportaba su propio ancho preferido (suma de sus hijos) al grupo externo en vez de expandirse a todo el ancho disponible, desbordando ~22px por lado. Fix: `flexibleWidth = 1f` en el `LayoutElement` de `CountsRow` (y de `TurnLabel`, por consistencia).
-  2. `HUD` nunca fijó `sizeDelta` a `(0, alto)` al pasar a anchors de stretch: el `sizeDelta` residual de un `RectTransform` recién creado se sumaba como ancho extra por fuera de la safe area (desbordaba ~62px por lado). Fix: `hudRT.sizeDelta = new Vector2(0f, hudRT.sizeDelta.y);` explícito.
-  - Ambos se diagnosticaron con mediciones exactas de `RectTransform.GetWorldCorners()` en Play Mode vía `execute_code`, no a ojo — la captura visual de Cami en `Wide Pill Cutout` fue la que disparó la investigación.
-- Probó un primer intento de fix para el bug (1) usando `childControlWidth=false` + anchors de stretch manuales en vez de dejar que el `VerticalLayoutGroup` controle el ancho; no funcionó: Unity colapsa los anchors de los hijos a un punto en `SetLayoutHorizontal()` sin importar los flags de control, porque el layout group siempre controla la *posición* en ambos ejes aunque no controle el *tamaño*. Se revirtió ese intento (se borró el helper `StretchHorizontal` que quedó sin uso) y se aplicó el fix real (`flexibleWidth`).
-- Verificó idempotencia corriendo el builder 3 veces en distintos momentos de la tarea (antes y después de los fixes de layout): siempre 1 sola instancia de cada GameObject, sin duplicados.
+**What the AI did:**
+- Translated into English every comment, XML doc and `Assert.Fail`/`Debug.Log`/exception message in the 30 `.cs` files of `Assets/_Project/` (Core, Game, UI, Editor and Tests), without changing logic or identifiers.
+- Left untouched the UI text the player sees in the game (`GameHud.cs`: "Turno: Jugador X", "Empate por repetición de posición", etc., and the "Reintentar" label of the restart button in `TicTacFadeSceneBuilder.cs`): it is product content, not developer text, and Cami's instruction specifically listed comments/XML docs/assertion and log messages, not UI text.
+- Verified with `grep` (accents, ñ, ¿¡ marks, and Spanish keywords) that no text was left outside those UI strings.
+- Made the `CLAUDE.md` conventions line precise: "All text inside `.cs` files goes in English: identifiers, comments, XML docs, and assertion/log messages. Design documentation (`docs/`) goes in Spanish. Commit messages are in English."
+- Recompiled and ran the full suite: 33/33 EditMode tests of `TicTacFade.Core.Tests` OK, 0 errors/warnings.
 
-**Revisión humana:**
-- Los 4 ajustes al plan (ver Pedido/prompt) ya están incorporados arriba.
-- Cami verificó visualmente en el Simulator con `iOS Classic (750x1334)` y `Wide Pill Cutout (1200x2640)`, en el peor caso real (X=3/3, O=3/3, aviso visible en ambos simultáneamente) — confirmó "anda perfecto" después de los 2 fixes de layout.
+**Human review:** pending (to be validated by Cami).
 
-**Verificación:** compila sin errores/warnings; builder idempotente (3 corridas, sin duplicados); Play mode sin excepciones; mediciones exactas de `RectTransform` en runtime confirman 0 overlaps y 0 desborde de la safe area en `Wide Pill Cutout (1200x2640)`; confirmación visual de Cami en `iOS Classic (750x1334)` y `Wide Pill Cutout (1200x2640)`.
+**Verification:** compiles with no errors/warnings (Unity console via MCP) and the 33 EditMode tests of `TicTacFade.Core.Tests` pass.
 
-**Aprendizajes:**
-- Una hipótesis de bug puede estar equivocada y el pedido de "verificalo antes de tocar nada" es exactamente lo que evita perseguir la causa falsa (duplicación) en vez de la real (caja fija + overflow no configurado).
-- Los layout groups de Unity anidados (`HorizontalLayoutGroup` dentro de `VerticalLayoutGroup`) necesitan `flexibleWidth` explícito en el `LayoutElement` del hijo-que-también-es-grupo, porque ese hijo reporta su propio tamaño preferido como cualquier `ILayoutElement` y puede pisar el intento de expansión del padre.
-- Un `RectTransform` recién creado retiene su `sizeDelta` default al cambiarle los anchors a stretch por código; hay que fijarlo a `(0,0)` (o al valor que corresponda) explícitamente, si no el valor residual se filtra como tamaño extra.
-- `UnityEngine.UI` ya trae un componente `SafeArea` propio (más completo que una implementación casera): conviene chequear con `unity_reflect` antes de escribir un componente que suena "estándar" — el compilador lo señaló solo (ambigüedad de nombres), pero convenía buscarlo antes de escribir el propio.
-- El Simulator de Unity 6 viene integrado en el Editor (sin paquete) y ya trae perfiles genéricos con notch/punch-hole/pill-cutout suficientes para probar safe area sin instalar `com.unity.device-simulator.devices`.
-- La captura de `manage_camera(action="screenshot")` no sirve para depurar UI `ScreenSpaceOverlay`: renderiza solo por cámara y excluye los canvases overlay. Medir `RectTransform.GetWorldCorners()` en runtime vía `execute_code` es más confiable que perseguir una captura de pantalla automatizada.
+**Learnings:** the language rule was in `CLAUDE.md` but was ambiguous about XML docs and assertion messages; it was made precise after the deviation was detected in the review.
 
-**Deuda conocida para la parte 2 (no resuelta acá, ver `GameHud.cs`):** el aviso de desvanecimiento sigue concatenado dentro del mismo `Text` que el contador (`UpdateActiveCounts`). Funciona con el wrap y el texto acortado, pero cuando se agreguen los indicadores de vida de las fichas debería pasar a ser su propio elemento de UI.
-
-**Commit(s):** — (sin commitear; Cami revisa y commitea).
+**Commit(s):** — (not committed; Cami reviews and commits).
 
 ---
 
-## [6] 2026-09-22 — UI parte 2: vida por ficha, ghost piece completo, aviso separado
+## [4] 2026-09-22 — Reorganization of Assets/Scenes/ and stale scene fix
 
-**Objetivo:** `docs/prompts/ui-parte-2.md` — indicador de vida por ficha (GDD §4.1, ambos jugadores), separar el aviso de desvanecimiento del contador (cancela la deuda de la entrada [5]), ghost piece con confirmación en dos toques que previsualice el tablero resultante completo (GDD §3.7), y chequeo de regresión del resaltado de línea ganadora. Restricción explícita: no tocar Core.
+**Goal:** close the pending item from entry [1]: move `Assets/Scenes/` to `Assets/_Project/Scenes/`, update Build Settings and remove the hardcoded path from `TicTacFadeSceneBuilder.cs`.
 
-**Confirmado antes de tocar nada:** toda la información necesaria ya era pública en `GameState`/`RulesEngine` (`GetLife`, `QueueX`/`QueueO`, `Config.BufferSize`, `GetActiveCount`, `IsLegal`, `WinningLine`) — no hizo falta ningún cambio en Core. El resaltado de línea ganadora ya estaba implementado end-to-end desde antes; esta tarea solo lo re-verificó.
+**Request / prompt:** Cami asked to move `Assets/Scenes/` (with its `.meta` files) to `Assets/_Project/Scenes/`, update Build Settings, remove the builder's hardcoded path (the scene paths should come from a single place, a constant or Build Settings), and verify that the scene opens, that the game runs and that the builder still works. Closed scope: without touching gameplay or UI scripts. On the proposed plan, Cami asked for two changes: (1) `SampleScene.unity` (a template leftover, with no references, first in the build order) is not migrated: it is deleted together with its Build Settings entry, which is left with a single entry; (2) verify at the end with `git status --porcelain` that the scene shows up as a rename and not as delete+add.
 
-**Corrección propia durante el plan, señalada por Cami:** la primera versión de mi plan asumía que la marca crítica de vida 1 ya alcanzaba para cubrir "la ficha que se va, marcada" del ghost piece, porque matemáticamente son la misma celda (la más vieja de una cola llena siempre tiene vida 1). Cami lo objetó con razón: esa marca aparece en las fichas de **ambos** jugadores a la vez si las dos colas están llenas, así que durante el preview no distingue cuál de los dos badges corresponde a la jugada actual. Se corrigió agregando `CellView.SetGhostVictim(bool)`, una marca aparte (opacidad al mínimo, 0.12) aplicada solo a la ficha propia del jugador activo que el FIFO eliminaría por la jugada previsualizada — independiente de la marca crítica pasiva. Verificado en Play mode: con ambas colas llenas, la ficha vieja del rival muestra el badge crítico pero **no** cae a opacidad mínima; solo la del jugador que previsualiza sí.
+**What the AI did:**
+- Moved `Assets/Scenes/TicTacFadeGame.unity` to `Assets/_Project/Scenes/TicTacFadeGame.unity` with `manage_asset(action="move")` (it preserves the GUID and `.meta` via `AssetDatabase.MoveAsset`, not by hand on the filesystem).
+- Deleted `Assets/Scenes/SampleScene.unity` (+ `.meta`) with `manage_asset(action="delete")`, and deleted the now empty `Assets/Scenes/` folder.
+- Updated Build Settings to a single entry (`Assets/_Project/Scenes/TicTacFadeGame.unity`) with `manage_build(action="scenes")`.
+- Updated `TicTacFadeSceneBuilder.cs` line 18: `ScenePath` now points to `Assets/_Project/Scenes/TicTacFadeGame.unity` (it is still the only constant the 3 uses come from: `SaveScene`, the Build Settings check and the log).
+- When testing Play Mode it found 2 `NullReferenceException`s (`BoardView.cs:27`, `GameHud.cs:25`, both in `Awake` when doing `gameManager.StateChanged += ...`). It diagnosed the cause by reading the scene YAML (read only): the scene was **stale**, built before the Core refactor — the serialized `GameManager` had `m_EditorClassIdentifier: TicTacFade.Gameplay.GameManager` with old `boardView`/`hud` fields that no longer exist in the current class (`TicTacFade.Game.GameManager`), and `BoardView`/`GameHud` didn't have the `gameManager` field serialized at all (only the current `GameManager.cs` has the reverse relationship). It wasn't a bug caused by the move: the scene's content isn't touched when moving it, so it had already been broken since 9/17, untested in Play mode until now.
+- Re-ran the builder (`Tic-Tac-Fade/Build Placeholder Scene (1v1)`), which regenerates the scene from the current classes and solved the problem: 0 errors in Play mode afterwards.
+- Verified Build Settings after the builder re-run: still 1 single entry (it didn't duplicate), confirming that the `alreadyInBuild` check works with the fixed constant.
+- Ran `git status --porcelain` (with `git add -A` so similarity is computed, then reverted with `git reset` so nothing is left staged): `TicTacFadeGame.unity`, its `.meta` and `Assets/Scenes.meta`→`Assets/_Project/Scenes.meta` show up as **R** (rename); `SampleScene.unity` + `.meta` show up as **D** (deleted). The `.meta` traveled with the file, as it should.
+- Didn't touch `GameManager.cs`, `BoardView.cs`, `CellView.cs`, `GameHud.cs` or `RestartButton.cs`.
+- Left `ProjectSettings/ProjectSettings.asset` untouched (`templateDefaultScene: Assets/Scenes/SampleScene.unity`): inert metadata from the original template, read neither by the game nor by the build, and there is no MCP tool that exposes that specific field (editing that YAML by hand would violate the CLAUDE.md rule).
 
-**Qué hizo la IA:**
-- `CellView.cs`: nuevos campos `criticalMark` (badge opaco, teñido con el color del dueño — no rojo fijo, para que se distingan los badges de X y O) y `ghostOverlay` (ficha nueva translúcida del preview). Pulso lento en vida 2 vía `Update()` (alfa modulada con seno, sin tocar vida 1/3). `SetGhostVictim(bool)` nuevo (ver corrección arriba).
-- `BoardView.cs`: estado de selección (`selectedCell`) y reescritura de `OnCellClicked` para el flujo de dos toques; `ClearGhostPreview()` limpia ghost + marca de víctima en las 9 celdas antes de cada nueva selección o al confirmar.
-- `GameHud.cs`: `UpdateActiveCounts` deja de concatenar el aviso; nuevo campo `fadeWarningLabel` y `BuildFadeWarning()` arma un mensaje compartido ("¡X desvaneciendo!" / "¡O desvaneciendo!" / "¡X y O desvaneciendo!").
-- `TicTacFadeSceneBuilder.cs`: `CreateCell` agrega `CriticalMark`/`GhostOverlay` (orden de hijos: Label → CriticalMark → GhostOverlay → Highlight, para que el borde de victoria quede siempre arriba). `CreateHud` agrega `FadeWarning` como tercer hijo de `HUD`; `CountsRow.minHeight` baja de 110 a 60 (ya no necesita lugar para 2 líneas en el mismo Text).
-- **Test PlayMode nuevo** (pedido explícito de Cami, primera vez que este repo tiene uno): `Assets/_Project/Tests/PlayMode/` con su propio asmdef (`TicTacFade.PlayModeTests`, `defineConstraints: ["UNITY_INCLUDE_TESTS"]` para que no viaje en el build de Android) y `SceneWiringAndInputTests.cs` con 2 tests: (1) carga la escena y verifica por reflection que ninguna referencia serializada de `CellView`/`BoardView`/`GameHud` quedó sin asignar; (2) simula dos toques reales sobre el `Button` de una celda (`onClick.Invoke()`, no `GameManager.OnCellClicked` directo) y confirma que el primero no aplica la jugada y el segundo sí. Espera activamente a que `GameManager.CurrentState` exista (con timeout y mensaje claro) en vez de un `yield return null` fijo, para no dejar un test intermitente.
-- Actualizó `docs/GDD.md` (v0.2 → v0.3): §4.1 documenta el badge de vida 1 teñido por dueño; §3.7 documenta que el preview marca también la ficha propia que el FIFO eliminaría, distinta de la marca crítica pasiva. Fila nueva en el historial de versiones.
+**Human review:** pending (to be validated by Cami).
 
-**Revisión humana (dos rondas de ajustes sobre el plan, ambas incorporadas):**
-- Ronda 1: la marca de ghost victim tiene que ser distinta de la marca crítica pasiva (ver corrección arriba); el badge de vida 1 tiene que ir teñido por dueño, no rojo fijo; agregar el test PlayMode descripto arriba.
-- Ronda 2: sumar la actualización del GDD (hecha arriba); limpiar una frase del plan que había quedado desactualizada tras la ronda 1; cambiar el `yield return null` fijo del test por una espera activa con timeout.
+**Verification:** the scene loads with no errors (hierarchy with `EventSystem`/`Canvas`/`GameManager` intact); Play mode with no exceptions after regenerating the scene; the builder recreated the scene at the new path without duplicating the Build Settings entry; `git status --porcelain` confirms a rename (not delete+add) for the moved scene.
 
-**Verificación:**
-- Compila sin errores/warnings.
-- `run_tests(mode="PlayMode")`: 2/2 tests nuevos OK. `run_tests(mode="EditMode")`: 33/33 Core sin regresión.
-- Play mode: secuencia de 6 jugadas confirmadas (dos toques cada una, vía `Button.onClick.Invoke()`, no `GameManager` directo) deja vida 1/2/3 visible en ambos jugadores a la vez; un toque más en una celda vacía muestra el ghost preview con la ficha nueva y, en simultáneo, la ficha vieja de X cae a opacidad mínima mientras la vieja de O (mismo momento, sin ser la jugada actual) se queda solo con el badge crítico normal — confirma que las dos marcas son independientes. Regresión de línea ganadora: partida corta forzando victoria de X, `highlightBorder` se prende en las 3 celdas y aparece el banner. 0 errores de consola en toda la sesión.
-- **Confirmación visual en el Simulator (`iOS Classic`, `Wide Pill Cutout`): pendiente de Cami** — se le dejó el estado de peor caso armado en Play mode para que lo revise.
+**Learnings:** a `.unity` scene can silently get out of sync with a script refactor (the old serialized fields are simply lost when deserializing under the new class, with no compilation error) — it is worth testing Play mode after a Core/Game/UI refactor, not just compiling and running EditMode tests. Moving an asset with `manage_asset(move)` doesn't rewrite its content, so a bug of this kind survives the move intact and has to be diagnosed separately. The Core extraction commit was left with the serialized scene out of date (NullReference in Play mode), detected only in the following iteration. The manual smoke test in Play Mode is mandatory before closing any task that touches serialized types, and regenerating the scene with the builder is part of that verification.
 
-**Aprendizajes:** una lectura propia de "esto ya alcanza" puede estar matemáticamente bien y ser insuficiente en términos de UX/claridad — la corrección de Cami sobre el ghost piece es exactamente ese caso. Cuando el código termina divergiendo de una descripción implícita del GDD, corresponde actualizar el GDD explícitamente en vez de dejar la especificación real solo en el código (por eso se agregó la v0.3).
-
-**Nota para el futuro, sin resolver ahora (pedido explícito de Cami):** `SceneWiringAndInputTests.AssertNoNullReferenceFields` asume que toda referencia serializada de `CellView`/`BoardView`/`GameHud` es obligatoria. El día que exista un campo legítimamente opcional, va a hacer falta una forma de excluirlo del chequeo (por ejemplo un atributo marcador o una lista de excepciones por nombre de campo).
-
-**Commit(s):** — (sin commitear; Cami revisa y commitea).
+**Commit(s):** — (not committed; Cami reviews and commits).
 
 ---
 
-## [7] 2026-09-22 — Configuración de PlayerSettings para el primer build de Android
+## [5] 2026-09-22 — UI part 1: healthy scene and HUD (camera, safe area, layout)
 
-**Objetivo:** dejar el proyecto configurado para el primer build de Android vía la API de `PlayerSettings` (nunca editando YAML a mano), en un método de Editor reproducible bajo el menú Tic-Tac-Fade — no builda nada, eso lo corre Cami.
+**Goal:** `docs/promps/ui-parte-1.md` — make the scene builder idempotent, add a Main Camera, and redo the HUD layout with anchors/layout groups + safe area (portrait, Canvas Scaler 1080x1920 match 0.5), verified with the Simulator in 16:9 and 20:9. Out of scope: life indicators, ghost piece and winning line (part 2).
 
-**Pedido / prompt:** Company name y product name reales; package `com.<compañía>.tictacfade` en minúsculas; versión "0.1.0", bundleVersionCode 1; IL2CPP + ARM64; API mínima 23 o superior; confirmar orientación portrait y una sola escena en Build Settings; todo reproducible en un método de menú; documentar en el ai-log; no correr la build.
+**Request / prompt:** Cami reported a HUD with overlapping texts and a hypothesis of her own: `TicTacFadeSceneBuilder` would not be idempotent and re-running it would duplicate HUD objects, leaving old, non-updated labels on top of the live ones. She asked to verify that hypothesis through MCP before touching anything. She approved the plan with 4 adjustments: (1) the portrait lock is not optional, GDD §2.3 asks for it; (2) `SafeArea.Apply()` also had to set `offsetMin`/`offsetMax` to zero explicitly; (3) add this ai-log entry documenting the ruling-out of her hypothesis with evidence; (4) note as part 2 debt that the fade warning is still concatenated in the same `Text` as the counter.
 
-**Qué hizo la IA:**
-- Antes de tocar nada, buscó si "company name" ya estaba establecido en algún lado de la documentación del repo (por la carpeta raíz `E:\HeuMila\`); no encontró ninguna referencia en `docs/`/`CLAUDE.md`, así que **preguntó** en vez de asumir. Cami confirmó `HeuMila` y `Tic-Tac-Fade` (con guiones, como en el GDD) para product name.
-- Revisó con `unity_reflect` la API real de `PlayerSettings` antes de escribir código: `AndroidApiLevel23` (y todo el rango 16–25) está **obsoleto** en esta versión de Unity (6000.6.1f1). Usó `AndroidApiLevel26`, el nivel no-obsoleto más bajo que igual cumple "23 o superior" — lo señala explícitamente en un comentario y en el log de la propia herramienta, para que no sea una sorpresa.
-- Creó `Assets/_Project/Scripts/Editor/AndroidBuildConfigurator.cs`, menú `Tic-Tac-Fade/Configure Android Player Settings`, método `ConfigureForAndroid()`: `companyName`/`productName`, `SetApplicationIdentifier` (`com.heumila.tictacfade`), `bundleVersion`/`bundleVersionCode`, `SetScriptingBackend(IL2CPP)`, `Android.targetArchitectures = ARM64`, `Android.minSdkVersion`, re-aserta el lock de portrait (GDD §2.3) en vez de depender de que quedara de una sesión anterior, y loguea un warning si `EditorBuildSettings.scenes.Length != 1` en vez de tocarlo solo (no hay forma segura de "arreglar" eso sin asumir cuál escena querés).
-- **No tocó nada de keystore/firma** — no estaba pedido, y generar o tocar un keystore es una acción sensible (credenciales) que no corresponde asumir.
-- Ejecutó el menú dos veces (confirma que es idempotente) y verificó cada valor final por separado vía `execute_code`, no solo el log de la propia herramienta.
+**What the AI did:**
+- **Verified the duplication hypothesis (ruled out with evidence) before touching anything:** it inspected the live hierarchy through MCP (`get_hierarchy`, `find_gameobjects`) and the saved scene's YAML — exactly 1 `TurnLabel`, 1 `CountX`, 1 `CountO`, with no orphans. Structural cause: `BuildScene()` always starts with `EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single)`, which wipes the whole scene before rebuilding; there is no code path that can duplicate objects between runs. The real cause of the "overlapping" was another: `GameHud.cs` concatenated the fade warning inside the same `Text` as the counter, in a fixed box with no overflow configured.
+- Added `CreateMainCamera()` to `TicTacFadeSceneBuilder.cs` (Camera + AudioListener + `UniversalAdditionalCameraData` for URP, tag `MainCamera`, `clearFlags=SolidColor`, near-black background).
+- Redid `CreateHud()`: `SafeAreaHUD` (it uses Unity's **built-in** `UnityEngine.UI.SafeArea` component, not a handmade one — a custom `SafeArea.cs` had been written first, but the compiler flagged a name ambiguity against the `UnityEngine.UI.SafeArea` already existing in the package, and on inspecting it by reflection it turned out to be a more complete implementation than ours; the custom script was deleted and Unity's was used) → `HUD` (`VerticalLayoutGroup` + vertical `ContentSizeFitter`) → `TurnLabel` + `CountsRow` (`HorizontalLayoutGroup`) → `CountX`/`CountO`, all with `Wrap`/`Overflow` instead of fixed boxes.
+- Locked portrait orientation via `PlayerSettings` (Unity API, not YAML editing): `defaultInterfaceOrientation=Portrait`, autorotate to landscape/upside-down portrait disabled. It is a GDD §2.3 requirement, not an inference.
+- Shortened the fade warning in `GameHud.cs` from "¡Aviso de desvanecimiento!" to "¡Desvaneciendo!" (Cami's request after seeing the overflow on a narrow device) — it reduces the text width needed, it doesn't replace the layout fix.
+- **Found and fixed 2 real nested-layout bugs during the Simulator verification** (they weren't in the original plan, they showed up when testing on `Wide Pill Cutout 1200x2640`, with a capture from Cami showing the text cut and stacked vertically):
+  1. `CountsRow` (a `HorizontalLayoutGroup`, child of `HUD`) had no `flexibleWidth` in its own `LayoutElement`: being an `ILayoutElement` too, it reported its own preferred width (the sum of its children) to the outer group instead of expanding to the full available width, overflowing ~22px per side. Fix: `flexibleWidth = 1f` on the `LayoutElement` of `CountsRow` (and of `TurnLabel`, for consistency).
+  2. `HUD` never set `sizeDelta` to `(0, height)` when switching to stretch anchors: the residual `sizeDelta` of a freshly created `RectTransform` was added as extra width outside the safe area (it overflowed ~62px per side). Fix: an explicit `hudRT.sizeDelta = new Vector2(0f, hudRT.sizeDelta.y);`.
+  - Both were diagnosed with exact `RectTransform.GetWorldCorners()` measurements in Play Mode via `execute_code`, not by eye — Cami's visual capture on `Wide Pill Cutout` was what triggered the investigation.
+- Tried a first attempt at fixing bug (1) using `childControlWidth=false` + manual stretch anchors instead of letting the `VerticalLayoutGroup` control the width; it didn't work: Unity collapses the children's anchors to a point in `SetLayoutHorizontal()` regardless of the control flags, because the layout group always controls the *position* on both axes even if it doesn't control the *size*. That attempt was reverted (the `StretchHorizontal` helper that was left unused was deleted) and the real fix (`flexibleWidth`) was applied.
+- Verified idempotence by running the builder 3 times at different moments of the task (before and after the layout fixes): always 1 single instance of each GameObject, with no duplicates.
 
-**Revisión humana:** pendiente (a validar por Cami).
+**Human review:**
+- The 4 adjustments to the plan (see Request/prompt) are already incorporated above.
+- Cami verified visually in the Simulator with `iOS Classic (750x1334)` and `Wide Pill Cutout (1200x2640)`, in the real worst case (X=3/3, O=3/3, warning visible on both at the same time) — she confirmed "anda perfecto" [works perfectly] after the 2 layout fixes.
 
-**Verificación:** compila sin errores/warnings. Ejecutado 2 veces sin error ni cambio de resultado. Valores confirmados uno por uno: `companyName=HeuMila`, `productName=Tic-Tac-Fade`, `applicationIdentifier=com.heumila.tictacfade`, `bundleVersion=0.1.0`, `bundleVersionCode=1`, `scriptingBackend=IL2CPP`, `targetArchitectures=ARM64`, `minSdkVersion=AndroidApiLevel26`, `defaultInterfaceOrientation=Portrait`, autorotate a landscape/portrait-invertido deshabilitados, 1 sola escena en Build Settings (`TicTacFadeGame.unity`, enabled). No se corrió ninguna build.
+**Verification:** compiles with no errors/warnings; idempotent builder (3 runs, no duplicates); Play mode with no exceptions; exact `RectTransform` measurements at runtime confirm 0 overlaps and 0 safe-area overflow on `Wide Pill Cutout (1200x2640)`; Cami's visual confirmation on `iOS Classic (750x1334)` and `Wide Pill Cutout (1200x2640)`.
 
-**Aprendizajes:** un valor pedido textualmente ("API 23") puede ya no ser válido en la versión de Unity/Editor actual (deprecado); vale la pena chequear con `unity_reflect` antes de fijar un enum a mano, y dejar documentado por qué el valor final difiere del pedido literal en vez de aplicarlo a ciegas o cambiarlo en silencio.
+**Learnings:**
+- A bug hypothesis can be wrong, and the "verify it before touching anything" request is exactly what avoids chasing the false cause (duplication) instead of the real one (fixed box + overflow not configured).
+- Unity's nested layout groups (`HorizontalLayoutGroup` inside `VerticalLayoutGroup`) need an explicit `flexibleWidth` on the `LayoutElement` of the child-that-is-also-a-group, because that child reports its own preferred size like any `ILayoutElement` and can override the parent's attempt to expand.
+- A freshly created `RectTransform` keeps its default `sizeDelta` when its anchors are changed to stretch in code; it has to be set to `(0,0)` (or the appropriate value) explicitly, otherwise the residual value leaks as extra size.
+- `UnityEngine.UI` already ships its own `SafeArea` component (more complete than a homemade implementation): it is worth checking with `unity_reflect` before writing a component that sounds "standard" — the compiler flagged it by itself (name ambiguity), but it would have been better to look for it before writing our own.
+- The Unity 6 Simulator comes integrated in the Editor (no package) and already ships generic profiles with notch/punch-hole/pill-cutout good enough to test the safe area without installing `com.unity.device-simulator.devices`.
+- The `manage_camera(action="screenshot")` capture is no use for debugging `ScreenSpaceOverlay` UI: it renders only through the camera and excludes overlay canvases. Measuring `RectTransform.GetWorldCorners()` at runtime via `execute_code` is more reliable than chasing an automated screenshot.
 
-**Commit(s):** — (sin commitear; Cami revisa y commitea).
+**Known debt for part 2 (not solved here, see `GameHud.cs`):** the fade warning is still concatenated inside the same `Text` as the counter (`UpdateActiveCounts`). It works with the wrap and the shortened text, but when the piece life indicators are added it should become its own UI element.
 
----
-
-## [8] 2026-09-22 — Auditoría de efectos secundarios de la config de Android (entrada [7])
-
-**Objetivo:** Cami revisó los cambios sin commitear después de la entrada [7] y encontró dos cosas que `AndroidBuildConfigurator` no explicaba a simple vista: una carpeta `Assets/Resources/` nueva, y cambios en `Assets/Settings/UniversalRP.asset` / `UniversalRenderPipelineGlobalSettings.asset`. Pidió diagnosticar ambas antes de asumir que eran intencionales.
-
-**Pedido / prompt:** primera pregunta — qué creó `Resources/`, qué hay adentro, si fue `AndroidBuildConfigurator`, y si los cambios de URP eran intencionales o un toque accidental de Unity al cambiar de plataforma. Mi primera respuesta propuso como causa un cambio de plataforma activa; Cami corrigió que la plataforma ya era Android desde antes de esta sesión (confirmado por capturas previas), y pidió específicamente revisar si los cambios de Player Settings del configurador (IL2CPP, ARM64, graphics API) eran el disparador real, y corregir el diagnóstico acá si correspondía. En una tercera vuelta, pidió: (1) verificar si el asset `InputSystem_Actions.inputactions` referenciado en `preloadedAssets` todavía existe o es una referencia colgada de un asset borrado, y sacarlo vía `PlayerSettings.SetPreloadedAssets` si corresponde; (2) cerrar el tema URP sin seguir investigando — registrar causa no determinada con los descartes documentados, tratarlo como re-serialización interna benigna.
-
-**Qué hizo la IA:**
-- `Assets/Resources/`: identificado por contenido (`PerformanceTestRunInfo.json`, `PerformanceTestRunSettings.json`) y por el paquete `com.unity.test-framework.performance` (confirmado en `packages-lock.json`) como un artefacto automático de Unity al correr tests PlayMode — no algo que `AndroidBuildConfigurator` cree (el script no tiene una sola línea que escriba a disco fuera de `PlayerSettings`/`EditorBuildSettings`). Cami ya lo borró y agregó la regla al `.gitignore`.
-- URP — primera hipótesis (cambio de plataforma activa) **descartada**: Cami confirmó que la plataforma activa ya era Android antes de esta sesión.
-- Segunda hipótesis pedida (IL2CPP/ARM64/graphics API) **descartada con evidencia**, no solo por lectura del script: comparé el diff real de `ProjectSettings/ProjectSettings.asset` campo por campo contra los valores actuales. `scriptingBackend`, `AndroidTargetArchitectures` y `AndroidMinSdkVersion` **no aparecen en el diff en absoluto** — ya tenían esos valores exactos (IL2CPP, ARM64, 26) antes de que corriera el configurador, así que no pudieron dispararlo. `m_BuildTargetGraphicsAPIs` sigue en `[]` (Auto), sin tocar. Lo único genuinamente nuevo del lado Android fue `applicationIdentifier.Android` (antes no existía esa entrada, solo `Standalone`).
-- `preloadedAssets` (`InputSystem_Actions.inputactions`) — investigado a fondo en la tercera vuelta: el asset **existe** en disco (`Assets/Settings/InputSystem_Actions.inputactions`, GUID coincide, el `fileID` referenciado resuelve a un `InputActionAsset` real dentro del archivo, no es una referencia rota a nivel de asset). Pero **no es el que usa** `InputSystemUIInputModule` en la escena: ese componente, agregado sin asignarle explícitamente ningún `.inputactions` (`TicTacFadeSceneBuilder` solo hace `AddComponent<InputSystemUIInputModule>()`), termina usando un objeto autogenerado en runtime llamado `DefaultInputActions` — confirmado leyendo `inputModule.actionsAsset.name` con la escena abierta. Además, `PlayerSettings.GetPreloadedAssets()` en memoria ya devolvía 0 elementos pese a que el YAML en disco todavía tenía la entrada — un desincronismo real entre el estado vivo del Editor y lo persistido. No cumplía la condición que había puesto Cami para dejarlo ("si es el que usa el InputSystemUIInputModule"), así que se sacó vía `PlayerSettings.SetPreloadedAssets(new Object[0])` + `AssetDatabase.SaveAssets()` (API, no edición de YAML). Verificado después: `preloadedAssets: []` en disco.
-- URP — **causa no determinada, tema cerrado por pedido explícito de Cami.** Tres hipótesis evaluadas, ninguna confirmada:
-  1. Cambio de plataforma activa — descartada (la plataforma ya era Android desde antes de esta sesión).
-  2. Cambios de Player Settings del configurador de Android (IL2CPP/ARM64/graphics API) — descartada con evidencia (esos campos no aparecen en el diff de `ProjectSettings.asset`, ya tenían esos valores antes de correr `AndroidBuildConfigurator`).
-  3. La `Main Camera`/`UniversalAdditionalCameraData` agregada en la parte 1, recalculada en algún domain reload posterior — hipótesis con algo de sustento circunstancial (timestamps, contenido URP genuinamente nuevo) pero **no demostrable**, Unity no deja un log de esta recalculación interna.
-  El diff de `UniversalRP.asset`/`UniversalRenderPipelineGlobalSettings.asset` se trata como re-serialización interna de prefiltering de shaders, benigna — no bloquea nada, no se sigue investigando.
-
-**Revisión humana:** Cami corrigió mi primer diagnóstico (plataforma activa) con evidencia propia (capturas previas a la sesión) antes de que yo lo verificara con datos; eso llevó a la segunda vuelta, donde sí verifiqué con el diff real en vez de repetir una hipótesis plausible pero no chequeada. En la tercera vuelta, marcó el límite explícito de no seguir investigando URP con una causa no demostrable, y pidió resolver `preloadedAssets` con una regla concreta (existe + lo usa el módulo → dejarlo; si no → sacarlo por API).
-
-**Verificación:** diff completo de `ProjectSettings/ProjectSettings.asset` línea por línea; grep de los campos puntuales pedidos contra el archivo actual vs. el diff; comparación de timestamps de archivo entre `AndroidBuildConfigurator.cs` y los dos `.asset` de URP (consistente con la hipótesis 3, no la prueba de forma concluyente); para `preloadedAssets`: `AssetDatabase.LoadAllAssetsAtPath` confirmó que el fileID referenciado resuelve a un asset real, `InputSystemUIInputModule.actionsAsset.name` confirmó que el módulo usa un objeto distinto, `GetPreloadedAssets()` confirmó el desincronismo memoria/disco, y una relectura del YAML después del fix confirmó `preloadedAssets: []`.
-
-**Aprendizajes:** `git diff` contra el último commit mezcla los cambios de toda la sesión (varias tareas encima de una rama sin commitear), no solo los de la tarea puntual que se está reportando — antes de atribuir un cambio de asset a un script específico hay que confirmar que el campo relevante realmente cambió de valor en el diff, no solo que el archivo aparece modificado. Mi primera respuesta asumió una causa plausible (cambio de plataforma) sin verificarla contra el estado previo real; el diagnóstico correcto salió de comparar valores campo por campo, no de una explicación que sonaba razonable. Un asset puede existir en disco y aun así no ser el que un componente realmente usa en runtime — "¿el archivo existe?" y "¿está en uso?" son preguntas distintas, y solo la segunda importa para decidir si una entrada de `preloadedAssets` es correcta. No toda causa raíz es demostrable con las herramientas disponibles; cuando no lo es, hay que decirlo explícitamente en vez de presentar la hipótesis más plausible como si fuera la conclusión.
-
-**Commit(s):** — (sin commitear; Cami revisa y commitea).
+**Commit(s):** — (not committed; Cami reviews and commits).
 
 ---
 
-## [9] 2026-09-23 — Dirección visual en el GDD + sprites fuente sin cablear
+## [6] 2026-09-22 — UI part 2: life per piece, full ghost piece, separate warning
 
-**Objetivo:** dejar registrada en el GDD la dirección visual decidida para el pase de arte, y anotar que los sprites fuente ya están en el repo pero todavía no están conectados a ningún componente.
+**Goal:** `docs/prompts/ui-parte-2.md` — life indicator per piece (GDD §4.1, both players), separate the fade warning from the counter (pays off the debt from entry [5]), ghost piece with two-tap confirmation that previews the full resulting board (GDD §3.7), and a regression check of the winning line highlight. Explicit constraint: don't touch Core.
 
-**Pedido / prompt:** Cami pidió agregar al "GDD §5" la dirección visual (neón sobre fondo oscuro, X cian/O magenta, formas blancas tintadas por código, glow por Bloom de URP nunca horneado en el sprite, desintegración por shader de disolución + partículas), la restricción técnica de que Bloom no afecta a un Canvas Screen Space - Overlay, y una fila nueva en el historial de versiones. También pidió anotar en el ai-log que los sprites fuente (`piece_x`, `piece_o`, `shard`, `cell_frame`, `badge`) están en el repo como material para el pase de arte pero `CellView` sigue con los labels de texto hasta esa iteración.
+**Confirmed before touching anything:** all the needed information was already public in `GameState`/`RulesEngine` (`GetLife`, `QueueX`/`QueueO`, `Config.BufferSize`, `GetActiveCount`, `IsLegal`, `WinningLine`) — no change in Core was needed. The winning line highlight was already implemented end to end from before; this task only re-verified it.
 
-**Qué hizo la IA:**
-- Detectó un desajuste antes de escribir: el §5 actual del GDD es "Online (MVP)" (networking), no dirección visual — ese contenido corresponde a §6 "Diseño audiovisual (post-MVP)", que ya tenía una entrada abierta ("Arte: minimalista de alto contraste. Candidatos: neón cyberpunk o flat vector") esperando justamente esta decisión. Lo señaló y lo puso en §6 en vez de asumir en silencio o escribirlo en el lugar equivocado.
-- Actualizó `docs/GDD.md` §6: reemplazó los "candidatos" de arte por la dirección decidida (neón, cian/magenta, formas blancas tintadas por código, Bloom de URP), agregó la restricción técnica del Canvas (Screen Space - Overlay actual no recibe Bloom; el pase de arte va a necesitar pasar a Screen Space - Camera, cambio de arquitectura de UI, no cosmético) y precisó la desintegración como shader de disolución + partículas (antes solo decía "partículas"). v0.3 → v0.4, fila nueva en el historial.
-- Verificó que los 5 sprites fuente mencionados realmente están en el repo antes de anotarlo (no tomó la palabra de Cami sin chequear): `Assets/_Project/Art/Source/{piece_x,piece_o,shard,cell_frame,badge}.svg` + sus export `@2x.png`, los 5 presentes.
-- Confirmó que `CellView.cs` sigue sin cablear ningún sprite — sigue usando `label.text = "X"/"O"` sobre un `Image` de color plano (`XColor`/`OColor`), sin ninguna referencia a los sprites de `Art/Source/`. El cableado queda para una iteración futura de arte, que además requiere el cambio de Canvas a Screen Space - Camera documentado arriba.
+**Self-correction during the plan, pointed out by Cami:** the first version of my plan assumed that the life 1 critical mark was already enough to cover the ghost piece's "piece that goes, marked", because mathematically they are the same cell (the oldest of a full queue always has life 1). Cami rightly objected: that mark shows up on the pieces of **both** players at the same time if both queues are full, so during the preview it doesn't tell which of the two badges corresponds to the current move. It was fixed by adding `CellView.SetGhostVictim(bool)`, a separate mark (opacity at minimum, 0.12) applied only to the active player's own piece that the FIFO would remove with the previewed move — independent of the passive critical mark. Verified in Play mode: with both queues full, the opponent's old piece shows the critical badge but does **not** drop to minimum opacity; only the previewing player's does.
 
-**Revisión humana:** pendiente (a validar por Cami) — en particular, confirmar que §6 era el lugar correcto (no §5 como se pidió textualmente).
+**What the AI did:**
+- `CellView.cs`: new fields `criticalMark` (opaque badge, tinted with the owner's color — not a fixed red, so X's and O's badges can be told apart) and `ghostOverlay` (translucent new piece of the preview). Slow pulse at life 2 via `Update()` (alpha modulated with a sine, without touching life 1/3). New `SetGhostVictim(bool)` (see the correction above).
+- `BoardView.cs`: selection state (`selectedCell`) and a rewrite of `OnCellClicked` for the two-tap flow; `ClearGhostPreview()` clears ghost + victim mark on the 9 cells before each new selection or on confirming.
+- `GameHud.cs`: `UpdateActiveCounts` stops concatenating the warning; new field `fadeWarningLabel` and `BuildFadeWarning()` builds a shared message ("¡X desvaneciendo!" / "¡O desvaneciendo!" / "¡X y O desvaneciendo!").
+- `TicTacFadeSceneBuilder.cs`: `CreateCell` adds `CriticalMark`/`GhostOverlay` (children order: Label → CriticalMark → GhostOverlay → Highlight, so the win border always stays on top). `CreateHud` adds `FadeWarning` as the third child of `HUD`; `CountsRow.minHeight` goes down from 110 to 60 (it no longer needs room for 2 lines in the same Text).
+- **New PlayMode test** (an explicit request from Cami, the first time this repo has one): `Assets/_Project/Tests/PlayMode/` with its own asmdef (`TicTacFade.PlayModeTests`, `defineConstraints: ["UNITY_INCLUDE_TESTS"]` so it doesn't ship in the Android build) and `SceneWiringAndInputTests.cs` with 2 tests: (1) it loads the scene and verifies by reflection that no serialized reference of `CellView`/`BoardView`/`GameHud` was left unassigned; (2) it simulates two real taps on a cell's `Button` (`onClick.Invoke()`, not `GameManager.OnCellClicked` directly) and confirms that the first doesn't apply the move and the second does. It actively waits for `GameManager.CurrentState` to exist (with a timeout and a clear message) instead of a fixed `yield return null`, so as not to leave a flaky test.
+- Updated `docs/GDD.md` (v0.2 → v0.3): §4.1 documents the life 1 badge tinted by owner; §3.7 documents that the preview also marks the player's own piece the FIFO would remove, different from the passive critical mark. New row in the version history.
 
-**Verificación:** lectura directa del GDD post-edición; listado de archivos en `Assets/_Project/Art/Source/` confirmando los 5 sprites; lectura de `CellView.cs` confirmando que no referencia ningún sprite todavía.
+**Human review (two rounds of adjustments on the plan, both incorporated):**
+- Round 1: the ghost victim mark has to be different from the passive critical mark (see the correction above); the life 1 badge has to be tinted by owner, not a fixed red; add the PlayMode test described above.
+- Round 2: add the GDD update (done above); clean up a sentence of the plan that had become outdated after round 1; change the test's fixed `yield return null` for an active wait with a timeout.
 
-**Aprendizajes:** cuando un pedido especifica un número de sección que no coincide con el contenido real del documento, conviene señalar el desajuste y ubicar el contenido donde semánticamente corresponde, en vez de crear una sección nueva o forzarlo en el lugar pedido — el GDD ya tenía un "candidato" abierto en §6 esperando exactamente esta decisión.
+**Verification:**
+- Compiles with no errors/warnings.
+- `run_tests(mode="PlayMode")`: 2/2 new tests OK. `run_tests(mode="EditMode")`: 33/33 Core with no regression.
+- Play mode: a sequence of 6 confirmed moves (two taps each, via `Button.onClick.Invoke()`, not `GameManager` directly) leaves life 1/2/3 visible on both players at the same time; one more tap on an empty cell shows the ghost preview with the new piece and, simultaneously, X's old piece drops to minimum opacity while O's old one (same moment, not being the current move) keeps only the normal critical badge — it confirms that the two marks are independent. Winning line regression: a short match forcing X's win, `highlightBorder` turns on in the 3 cells and the banner appears. 0 console errors in the whole session.
+- **Visual confirmation in the Simulator (`iOS Classic`, `Wide Pill Cutout`): pending from Cami** — the worst-case state was left set up in Play mode for her to review.
 
-**Commit(s):** — (sin commitear; Cami revisa y commitea).
+**Learnings:** a reading of one's own that "this is already enough" can be mathematically right and still insufficient in terms of UX/clarity — Cami's correction about the ghost piece is exactly that case. When the code ends up diverging from an implicit description in the GDD, the GDD should be updated explicitly instead of leaving the real specification only in the code (that is why v0.3 was added).
 
----
+**Note for the future, unresolved for now (an explicit request from Cami):** `SceneWiringAndInputTests.AssertNoNullReferenceFields` assumes that every serialized reference of `CellView`/`BoardView`/`GameHud` is mandatory. The day a legitimately optional field exists, a way to exclude it from the check will be needed (for example a marker attribute or a list of exceptions by field name).
 
-## [10] 2026-09-23 — IPlayerController + GameConfig como ScriptableObject
-
-**Objetivo:** `docs/prompts/player-controllers.md` — implementar dos reglas de arquitectura ya declaradas pero no construidas: CLAUDE.md regla 5 ("Players are interchangeable through IPlayerController...") y ADR 0001 ("La capa Game expone GameConfig como ScriptableObject"). `GameManager` deja de asumir que toda jugada viene de la UI y de llamar `GameConfig.Mvp()` hardcodeado.
-
-**Pedido / prompt:** crear `IPlayerController` + `LocalHumanPlayer`, que `GameManager` reciba dos controllers sin ramificar por tipo; `GameConfig` como ScriptableObject (wrapper, Core sin tocar); scene builder crea/wirea la config nueva, idempotente; UI se adapta sin cambios visuales; tests EditMode/PlayMode existentes siguen pasando + partida local igual que antes + test nuevo con un controller no-humano; ai-log y ADR si corresponde.
-
-**Qué hizo la IA:**
-- Confirmó antes de escribir código que no hacía falta tocar Core: todo lo necesario ya era público (`Occupant`, `Move`, `GameState.GetFreeCellIndices()`).
-- Creó `IPlayerController.cs` (`Player`, evento `MoveChosen`, `NotifyTurnStarted`, `NotifyCellSelected`), `LocalHumanPlayer.cs` (espera pasivamente el toque) y `GameConfigAsset.cs` (wrapper ScriptableObject de `GameConfig`, nombre distinto a propósito para no repetir la ambigüedad de nombres que ya pasó una vez con `SafeArea`).
-- Reescribió `GameManager.cs`: `Initialize(IPlayerController, IPlayerController)` público y re-llamable, controllers por default (`LocalHumanPlayer` x2) creados en `Awake()` si nadie inyectó otros antes — no se pueden wirear desde el scene builder porque un campo de interfaz con `event` no sobrevive la serialización de Unity. `OnCellClicked`, `StartNewGame`, `CurrentState`, `StateChanged`, `GameEnded` mantienen exactamente la misma firma pública.
-- **Confirmó y verificó que la UI no necesitaba ningún cambio**: `BoardView.cs`, `GameHud.cs`, `RestartButton.cs` quedaron intactos — cero líneas tocadas, todos siguen llamando a la misma API de `GameManager` que ya usaban.
-- `TicTacFadeSceneBuilder.cs`: `GetOrCreateGameConfigAsset()` (busca en `Assets/_Project/Config/GameConfig.asset`, lo crea solo si falta) + wiring del campo `config` de `GameManager`. Verificado idempotente corriendo el builder 2 veces: el asset no se duplica.
-- **Corrección de diseño encontrada por Cami en la revisión del plan, antes de escribir código:** el primer diseño notificaba el turno siguiente con una llamada recursiva desde dentro del manejo de la jugada anterior. Con dos controllers autónomos (el test pedido), eso apila un stack frame por jugada de toda la partida, y una jugada rechazada que no corta el ciclo produce recursión infinita → StackOverflow → cuelga el Editor sin excepción capturable. Se corrigió con un flag de re-entrada (`_isAdvancingTurns`) + bucle en un solo método (`AdvanceTurns`): una llamada anidada no abre un bucle nuevo, el de más afuera recoge el cambio de estado en su próxima iteración. `ApplyMove` corta en seco ante un `MoveRejectedEvent` (loguea y sale, no vuelve a notificar).
-- Creó `FakeAutoPlayer.cs` (solo test, `Assets/_Project/Tests/PlayMode/`): controller no-humano que juega la primera celda libre apenas se le notifica su turno.
-- Extendió `SceneWiringAndInputTests.cs`: sumó `GameManager` al chequeo de referencias serializadas sin asignar (protege el campo `config` nuevo). Agregó `GameManager_TwoFakeAutoPlayers_PlayFullMatchToCompletion` — dos `FakeAutoPlayer` (no un fake + un humano, pedido explícito de Cami en la segunda revisión) juegan una partida completa hasta `IsOver`, con un tope de 60 frames que falla el test si se excede (protección de test independiente, no confía solo en que el flag de re-entrada de producción esté bien) y verifica que terminó en un resultado válido (victoria con línea, o empate por repetición/tope de jugadas).
-- Agregó `docs/adr/0003-player-controller-abstraction.md` — solo para la parte de controllers; la de `GameConfig` como ScriptableObject ya estaba decidida en ADR 0001, no le correspondía una ADR nueva.
-- **Bug de tooling, no de código:** al crear `LocalHumanPlayer.cs`, `GameManager.cs` no podía resolver el tipo (`CS0246`) pese a que `IPlayerController.cs` y `GameConfigAsset.cs` —creados en el mismo lote— compilaban bien, y `validate_script` no encontraba ningún error en el archivo. Ni forzar `refresh_unity` varias veces ni reimportar el asset explícitamente lo resolvió. Se solucionó borrando el archivo (`delete_script`) y recreándolo idéntico — algo quedó mal registrado en el asset database para ese path/GUID específico en el primer intento. `unity_reflect search` (por texto) sigue sin encontrarlo después del fix, pero `unity_reflect get_type` (por nombre completo) sí lo confirma — el índice de búsqueda por texto tiene su propio caché, separado de la compilación real.
-
-**Revisión humana:** Cami aprobó el plan con una corrección de fondo (la recursión/rechazo de arriba) antes de que se escribiera una sola línea, y amplió el test pedido para que fuera dos controllers autónomos jugando una partida entera (no un fake + un humano) con protección explícita contra loops.
-
-**Verificación:** compila sin errores/warnings. `run_tests(EditMode)`: 33/33 Core, sin regresión. Scene builder corrido 2 veces: `GameConfig.asset` se crea una sola vez, no se duplica. `run_tests(PlayMode)`: 3/3 (wiring extendido a `GameManager`, doble-toque, partida completa con dos `FakeAutoPlayer`). Play mode manual con toques reales (`Button.onClick.Invoke()` doble por celda): partida local se juega idéntico a como jugaba antes del refactor.
-
-**Aprendizajes:** un archivo nuevo puede fallar en resolver como tipo con un error de compilador engañoso (`CS0246`, "falta un using") aunque el archivo esté sintácticamente perfecto y sus hermanos creados en el mismo lote compilen bien — vale la pena borrar y recrear el archivo antes de perseguir una causa de código que no existe. Revisar un plan de arquitectura ANTES de escribir código (como hizo Cami acá) es mucho más barato que encontrar un StackOverflow después: la recursión disfrazada de "notificación de turno" no se ve como recursión hasta que se piensa específicamente en el caso de dos controllers autónomos encadenados.
-
-**Commit(s):** — (sin commitear; Cami revisa y commitea).
+**Commit(s):** — (not committed; Cami reviews and commits).
 
 ---
 
-## [11] 2026-09-23 — Issue conocido: HUD tapado por el punch-hole en device real
+## [7] 2026-09-22 — PlayerSettings configuration for the first Android build
 
-**Objetivo:** dejar registrado un bug real encontrado en hardware (no en el Simulator) sin arreglarlo todavía, y avisar en el prompt de la próxima iteración que su verificación tiene que incluir device real, no solo Simulator.
+**Goal:** leave the project configured for the first Android build via the `PlayerSettings` API (never editing YAML by hand), in a reproducible Editor method under the Tic-Tac-Fade menu — it doesn't build anything, Cami runs that.
 
-**Pedido / prompt:** Cami probó el APK en un device real y encontró que el texto del HUD queda tapado por el punch-hole de la cámara — el contenedor de safe area no lo está excluyendo. Pidió anotarlo como issue conocido en el ai-log sin arreglarlo (se resuelve en la iteración de menú y flujo de pantallas), y agregar una línea a `docs/prompts/menu-flow.md` pidiendo que esa iteración verifique el HUD fuera del punch-hole en device real, no solo en el Simulator.
+**Request / prompt:** real company name and product name; package `com.<company>.tictacfade` in lowercase; version "0.1.0", bundleVersionCode 1; IL2CPP + ARM64; minimum API 23 or higher; confirm portrait orientation and a single scene in Build Settings; everything reproducible in a menu method; document it in the ai-log; don't run the build.
 
-**Qué hizo la IA:**
-- Agregó la línea pedida a la sección de Verificación de `docs/prompts/menu-flow.md`.
-- Antes de registrar la causa probable que dio Cami, la confirmó en el proyecto en vez de darla por buena a ciegas: `ProjectSettings/ProjectSettings.asset` tiene `androidRenderOutsideSafeArea: 1` — confirmado, es el valor actual del proyecto (ya se había visto en la investigación de la parte 1 de UI, sigue igual).
-- No investigó ni intentó arreglar el bug en sí — es explícitamente lo que Cami pidió no hacer todavía.
+**What the AI did:**
+- Before touching anything, it searched whether "company name" was already established anywhere in the repo's documentation (because of the root folder `E:\HeuMila\`); it found no reference in `docs/`/`CLAUDE.md`, so it **asked** instead of assuming. Cami confirmed `HeuMila`, and `Tic-Tac-Fade` (with hyphens, as in the GDD) for product name.
+- Checked the real `PlayerSettings` API with `unity_reflect` before writing code: `AndroidApiLevel23` (and the whole 16–25 range) is **obsolete** in this Unity version (6000.6.1f1). It used `AndroidApiLevel26`, the lowest non-obsolete level that still meets "23 or higher" — it points it out explicitly in a comment and in the tool's own log, so it isn't a surprise.
+- Created `Assets/_Project/Scripts/Editor/AndroidBuildConfigurator.cs`, menu `Tic-Tac-Fade/Configure Android Player Settings`, method `ConfigureForAndroid()`: `companyName`/`productName`, `SetApplicationIdentifier` (`com.heumila.tictacfade`), `bundleVersion`/`bundleVersionCode`, `SetScriptingBackend(IL2CPP)`, `Android.targetArchitectures = ARM64`, `Android.minSdkVersion`, it re-asserts the portrait lock (GDD §2.3) instead of relying on it being left from a previous session, and it logs a warning if `EditorBuildSettings.scenes.Length != 1` instead of touching it on its own (there is no safe way to "fix" that without assuming which scene you want).
+- **Didn't touch anything about the keystore/signing** — it wasn't asked for, and generating or touching a keystore is a sensitive action (credentials) that shouldn't be assumed.
+- Ran the menu twice (confirming that it is idempotent) and verified each final value separately via `execute_code`, not only the tool's own log.
 
-**Issue conocido (sin resolver):**
-- **Síntoma:** en un device Android real, el texto del HUD (turno, contadores, aviso de desvanecimiento) queda parcial o totalmente tapado por el recorte de la cámara (punch-hole). El componente `SafeArea` (`UnityEngine.UI.SafeArea`, ver entrada [5]) no lo está excluyendo del área visible del HUD.
-- **Causa probable (confirmada como configuración actual, no como diagnóstico completo del bug):** `PlayerSettings.Android.renderOutsideSafeArea` está en `true` (`androidRenderOutsideSafeArea: 1` en `ProjectSettings.asset`) — con eso la app dibuja por debajo del recorte de la cámara, y aparentemente `Screen.safeArea` no está compensando esa zona como se esperaba en este device. No se confirmó la causa raíz exacta (podría ser esa opción, podría ser además/en cambio un problema del propio `SafeArea` component o de cómo está anidado en `TicTacFadeSceneBuilder.CreateHud`) — falta reproducir y diagnosticar con calma.
-- **No reproducible en el Simulator:** ya se había visto en la parte 1 de UI que la simulación de notch/punch-hole del Simulator es aproximada; esto confirma que no alcanza como único método de verificación para safe area en dispositivos con cámara integrada a la pantalla.
-- **Por qué no se arregla ahora:** pedido explícito de Cami — se resuelve en la iteración de menú y flujo de pantallas (`docs/prompts/menu-flow.md`), que ya toca layout de HUD/pantallas y tiene sentido resolverlo ahí en vez de como un parche aislado.
+**Human review:** pending (to be validated by Cami).
 
-> **Resuelto y corregido en [12]** (verificado en device real, Samsung Galaxy S21 FE): la causa probable de arriba era incorrecta. La causa es que el componente `SafeArea` tenía `Edges = 0` (no respetaba ningún borde). `renderOutsideSafeArea` no era la causa. Tampoco es cierto que el Simulator no lo reproducía: la captura del `Wide Pill Cutout` de la parte 1 ya mostraba el turno a la altura de la pastilla. Ver [12].
+**Verification:** compiles with no errors/warnings. Run 2 times with no error and no change of result. Values confirmed one by one: `companyName=HeuMila`, `productName=Tic-Tac-Fade`, `applicationIdentifier=com.heumila.tictacfade`, `bundleVersion=0.1.0`, `bundleVersionCode=1`, `scriptingBackend=IL2CPP`, `targetArchitectures=ARM64`, `minSdkVersion=AndroidApiLevel26`, `defaultInterfaceOrientation=Portrait`, autorotate to landscape/upside-down portrait disabled, 1 single scene in Build Settings (`TicTacFadeGame.unity`, enabled). No build was run.
 
-**Revisión humana:** N/A — tarea de documentación pura, sin cambios de código.
+**Learnings:** a value asked for literally ("API 23") may no longer be valid in the current Unity/Editor version (deprecated); it is worth checking with `unity_reflect` before setting an enum by hand, and leaving documented why the final value differs from the literal request instead of applying it blindly or changing it silently.
 
-**Verificación:** `grep` confirmando el valor actual de `androidRenderOutsideSafeArea` en `ProjectSettings.asset`; lectura de `docs/prompts/menu-flow.md` post-edición.
-
-**Aprendizajes:** el Simulator de Unity aproxima el recorte de notch/punch-hole pero no reemplaza probar en hardware real — vale la pena, como hizo Cami, sacar un APK temprano específicamente para encontrar esta clase de diferencia antes de construir más encima. Confirmar en el proyecto un dato técnico que alguien da como "causa probable" (en vez de asumirlo) es barato y evita que una hipótesis no verificada quede registrada como si fuera un hecho comprobado.
-
-**Commit(s):** — (sin commitear; Cami revisa y commitea).
+**Commit(s):** — (not committed; Cami reviews and commits).
 
 ---
 
-## [12] 2026-09-23 — Menú y flujo de pantallas + causa real del punch-hole
+## [8] 2026-09-22 — Audit of the side effects of the Android config (entry [7])
 
-**Objetivo:** `docs/prompts/menu-flow.md`. El juego deja de arrancar directo en el tablero y pasa a tener el flujo del GDD §4.3 recortado a local: Menú → Partida → Resultado → (Revancha | Menú). También resuelve el issue conocido de [11].
+**Goal:** Cami reviewed the uncommitted changes after entry [7] and found two things `AndroidBuildConfigurator` didn't explain at first sight: a new `Assets/Resources/` folder, and changes in `Assets/Settings/UniversalRP.asset` / `UniversalRenderPipelineGlobalSettings.asset`. She asked to diagnose both before assuming they were intentional.
 
-**Pedido / prompt:** máquina de estados de flujo en Game (Menu, Playing, Result) sin lógica de pantalla en `GameManager`; menú con "Jugar local" preparado para dos botones más; pantalla de resultado con motivo y botones "Revancha"/"Menú" que reemplaza al banner; revancha alternando quién empieza; todo vertical, safe area, layout groups, sin posiciones fijas; Core sin tocar; builder idempotente; PlayMode test del flujo completo; Simulator en los dos perfiles; HUD verificado fuera del punch-hole en device real.
+**Request / prompt:** first question — what created `Resources/`, what is inside, whether it was `AndroidBuildConfigurator`, and whether the URP changes were intentional or an accidental touch by Unity when switching platforms. My first answer proposed an active platform switch as the cause; Cami corrected that the platform had already been Android since before this session (confirmed by earlier captures), and asked specifically to check whether the configurator's Player Settings changes (IL2CPP, ARM64, graphics API) were the real trigger, and to correct the diagnosis here if appropriate. In a third round, she asked: (1) to verify whether the `InputSystem_Actions.inputactions` asset referenced in `preloadedAssets` still exists or is a dangling reference to a deleted asset, and to remove it via `PlayerSettings.SetPreloadedAssets` if appropriate; (2) to close the URP topic without investigating further — record the cause as undetermined with the documented rule-outs, and treat it as benign internal re-serialization.
 
-**Qué hizo la IA:**
-- **Causa real del punch-hole (encontrada mientras se armaba el plan):** `UnityEngine.UI.SafeArea` no tiene `Reset()` ni valor inicial para `m_Edges`. Si se lo agrega por código queda en `0` = ningún borde respetado, y el componente no hace nada. La escena anterior tenía `m_Edges: 0` (leído, no editado). Fix: el builder setea `Edges = Top | Right | Bottom | Left` en un único helper, `CreateSafeAreaScreen`, que usan las tres pantallas. `renderOutsideSafeArea` queda en `true`.
-- Game: `FlowState.cs` (enum con valores explícitos, porque se serializa en la escena), `MatchFlow.cs` (tabla de transiciones permitidas + métodos de intención `PlayLocal`, `Rematch`, `BackToMenu`, `ExitMatch`; pasa a `Playing` **antes** de arrancar la partida, porque con controllers autónomos la partida puede terminar dentro de `StartNewGame`). `GameManager`: no arranca solo, `StartNewGame(Occupant startingPlayer)`, `DiscardMatch()` nuevo, `OnCellClicked` ignora en silencio si no hay partida en curso.
-- UI: `FlowScreenVisibility` (CanvasGroup, no `SetActive`, así `BoardView`/`GameHud` hacen `Awake` y se suscriben al cargar la escena sea cual sea la pantalla visible), `MenuScreen`, `ResultScreen` (absorbe el mensaje de fin que estaba en `GameHud`), `ExitMatchButton`. `GameHud` quedó solo con turno/contadores/aviso. `BoardView.OnCellClicked` tiene guarda contra `CurrentState == null` o partida terminada. Se borró `RestartButton.cs` (vía MCP).
-- Builder: `GameScreen` (tablero centrado sin el offset fijo (0,60) + HUD con `TopBar`/"Salir"), `ResultScreen` (panel anclado abajo, así la línea ganadora sigue visible), `MenuScreen` (título + `MenuButtons`, donde van a ir "Crear sala"/"Unirse"), `MatchFlow`. Se borró `CreateWinBanner`.
-- Tests PlayMode adaptados (ahora todo arranca tocando "Jugar local"). Test nuevo `Flow_MenuPlayRematchMenuExit_...`: toque perdido en Menu sin haber jugado (sin excepciones, `CurrentState` null) → jugar (X) → gana X → revancha (O) → gana O → Menú → jugar (X) → dos jugadas → "Salir" (Menu, partida descartada, sin excepciones) → jugar (X, tablero vacío). El test de los dos `FakeAutoPlayer` ahora también verifica que el flujo termina en `Result` aunque la partida termine sincrónicamente.
-- GDD v0.5: §3.1 regla de quién empieza desde el menú; §4.3 flujo completo con MVP / posterior y la decisión de "Crear sala" sin configuración.
+**What the AI did:**
+- `Assets/Resources/`: identified by content (`PerformanceTestRunInfo.json`, `PerformanceTestRunSettings.json`) and by the `com.unity.test-framework.performance` package (confirmed in `packages-lock.json`) as an automatic Unity artifact of running PlayMode tests — not something `AndroidBuildConfigurator` creates (the script has not a single line that writes to disk outside `PlayerSettings`/`EditorBuildSettings`). Cami already deleted it and added the rule to `.gitignore`.
+- URP — first hypothesis (active platform switch) **ruled out**: Cami confirmed that the active platform was already Android before this session.
+- Second hypothesis asked for (IL2CPP/ARM64/graphics API) **ruled out with evidence**, not only by reading the script: I compared the real diff of `ProjectSettings/ProjectSettings.asset` field by field against the current values. `scriptingBackend`, `AndroidTargetArchitectures` and `AndroidMinSdkVersion` **don't appear in the diff at all** — they already had those exact values (IL2CPP, ARM64, 26) before the configurator ran, so they couldn't have triggered it. `m_BuildTargetGraphicsAPIs` is still `[]` (Auto), untouched. The only genuinely new thing on the Android side was `applicationIdentifier.Android` (that entry didn't exist before, only `Standalone`).
+- `preloadedAssets` (`InputSystem_Actions.inputactions`) — investigated thoroughly in the third round: the asset **exists** on disk (`Assets/Settings/InputSystem_Actions.inputactions`, the GUID matches, the referenced `fileID` resolves to a real `InputActionAsset` inside the file, it's not a broken reference at the asset level). But it **is not the one used** by `InputSystemUIInputModule` in the scene: that component, added without explicitly assigning any `.inputactions` (`TicTacFadeSceneBuilder` only does `AddComponent<InputSystemUIInputModule>()`), ends up using an object autogenerated at runtime called `DefaultInputActions` — confirmed by reading `inputModule.actionsAsset.name` with the scene open. Also, `PlayerSettings.GetPreloadedAssets()` in memory already returned 0 elements even though the YAML on disk still had the entry — a real mismatch between the Editor's live state and what was persisted. It didn't meet the condition Cami had set to keep it ("if it is the one the InputSystemUIInputModule uses"), so it was removed via `PlayerSettings.SetPreloadedAssets(new Object[0])` + `AssetDatabase.SaveAssets()` (API, not YAML editing). Verified afterwards: `preloadedAssets: []` on disk.
+- URP — **cause undetermined, topic closed at Cami's explicit request.** Three hypotheses evaluated, none confirmed:
+  1. Active platform switch — ruled out (the platform had already been Android since before this session).
+  2. Player Settings changes by the Android configurator (IL2CPP/ARM64/graphics API) — ruled out with evidence (those fields don't appear in the `ProjectSettings.asset` diff, they already had those values before running `AndroidBuildConfigurator`).
+  3. The `Main Camera`/`UniversalAdditionalCameraData` added in part 1, recomputed in some later domain reload — a hypothesis with some circumstantial support (timestamps, genuinely new URP content) but **not provable**, Unity doesn't leave a log of this internal recomputation.
+  The diff of `UniversalRP.asset`/`UniversalRenderPipelineGlobalSettings.asset` is treated as benign internal re-serialization of shader prefiltering — it doesn't block anything, it is not investigated further.
 
-**Revisión humana:**
-- Primer ajuste al plan: (1) la jerarquía del plan parecía listar pantallas dos veces. Era la notación ("ResultScreen … + ResultScreen" = GameObject + componente del mismo nombre), no el builder; se reescribió como `GameObject [componentes]` y se sumó a la verificación contar objetos después de dos corridas. (2) Que la partida desde el menú arranque con X pasó al GDD §3.1 como regla, con fila de versión. (3) Definir qué hace cada lector de `CurrentState` mientras es null en Menu, con guardas, y verificarlo en el test.
-- Pidió actualizar el GDD §4.3 con el flujo completo (sala de espera, ingreso de código) marcando MVP / posterior, solo como documentación, y diseñar `FlowState`/`MatchFlow` para que sumar estados de sala sea agregar casos.
-- Segundo ajuste: transición `Playing → Menu` con un botón "Salir" discreto arriba, que descarta la partida; caso agregado al test.
+**Human review:** Cami corrected my first diagnosis (active platform) with her own evidence (captures from before the session) before I verified it with data; that led to the second round, where I did verify with the real diff instead of repeating a plausible but unchecked hypothesis. In the third round, she set the explicit limit of not continuing to investigate URP with an unprovable cause, and asked to resolve `preloadedAssets` with a concrete rule (exists + the module uses it → keep it; if not → remove it through the API).
 
-**Pendientes de diseño anotados:**
-- Cada pantalla futura (sala de espera, ingreso de código) tiene que definir explícitamente a dónde vuelve su botón de cancelar/volver. Es una fila de la tabla `AllowedTransitions` de `MatchFlow`, no un "back" genérico.
-- En online, `Playing → Menu` ("Salir") va a ser "abandonar", que cuenta como derrota. Hoy en local solo descarta la partida.
+**Verification:** full diff of `ProjectSettings/ProjectSettings.asset` line by line; grep of the specific fields asked for against the current file vs. the diff; comparison of file timestamps between `AndroidBuildConfigurator.cs` and the two URP `.asset` files (consistent with hypothesis 3, it doesn't prove it conclusively); for `preloadedAssets`: `AssetDatabase.LoadAllAssetsAtPath` confirmed that the referenced fileID resolves to a real asset, `InputSystemUIInputModule.actionsAsset.name` confirmed that the module uses a different object, `GetPreloadedAssets()` confirmed the memory/disk mismatch, and a re-read of the YAML after the fix confirmed `preloadedAssets: []`.
 
-**Verificación:**
-- Compila sin errores ni warnings.
+**Learnings:** `git diff` against the last commit mixes the changes of the whole session (several tasks on top of an uncommitted branch), not only those of the specific task being reported — before attributing an asset change to a specific script you have to confirm that the relevant field really changed value in the diff, not only that the file shows up as modified. My first answer assumed a plausible cause (platform switch) without verifying it against the real previous state; the correct diagnosis came from comparing values field by field, not from an explanation that sounded reasonable. An asset can exist on disk and still not be the one a component really uses at runtime — "does the file exist?" and "is it in use?" are different questions, and only the second matters to decide whether a `preloadedAssets` entry is correct. Not every root cause is provable with the available tools; when it isn't, it has to be said explicitly instead of presenting the most plausible hypothesis as if it were the conclusion.
+
+**Commit(s):** — (not committed; Cami reviews and commits).
+
+---
+
+## [9] 2026-09-23 — Visual direction in the GDD + source sprites not wired
+
+**Goal:** record in the GDD the visual direction decided for the art pass, and note that the source sprites are already in the repo but not yet connected to any component.
+
+**Request / prompt:** Cami asked to add to "GDD §5" the visual direction (neon on a dark background, X cyan/O magenta, white shapes tinted in code, glow through URP Bloom never baked into the sprite, disintegration by dissolve shader + particles), the technical constraint that Bloom doesn't affect a Screen Space - Overlay Canvas, and a new row in the version history. She also asked to note in the ai-log that the source sprites (`piece_x`, `piece_o`, `shard`, `cell_frame`, `badge`) are in the repo as material for the art pass but `CellView` keeps the text labels until that iteration.
+
+**What the AI did:**
+- Detected a mismatch before writing: the GDD's current §5 is "Online (MVP)" (networking), not visual direction — that content belongs to §6 "Diseño audiovisual (post-MVP)" [Audiovisual design (post-MVP)], which already had an open entry ("Arte: minimalista de alto contraste. Candidatos: neón cyberpunk o flat vector" [Art: high-contrast minimalist. Candidates: cyberpunk neon or flat vector]) waiting precisely for this decision. It pointed it out and put it in §6 instead of silently assuming or writing it in the wrong place.
+- Updated `docs/GDD.md` §6: it replaced the art "candidates" with the decided direction (neon, cyan/magenta, white shapes tinted in code, URP Bloom), added the Canvas technical constraint (the current Screen Space - Overlay doesn't receive Bloom; the art pass will need to switch to Screen Space - Camera, a UI architecture change, not a cosmetic one) and made the disintegration precise as dissolve shader + particles (before it only said "particles"). v0.3 → v0.4, new row in the history.
+- Verified that the 5 source sprites mentioned are really in the repo before noting it (it didn't take Cami's word without checking): `Assets/_Project/Art/Source/{piece_x,piece_o,shard,cell_frame,badge}.svg` + their `@2x.png` exports, all 5 present.
+- Confirmed that `CellView.cs` still doesn't wire any sprite — it still uses `label.text = "X"/"O"` over a flat-color `Image` (`XColor`/`OColor`), with no reference to the `Art/Source/` sprites. The wiring is left for a future art iteration, which also requires the Canvas switch to Screen Space - Camera documented above.
+
+**Human review:** pending (to be validated by Cami) — in particular, confirming that §6 was the right place (not §5 as literally asked).
+
+**Verification:** direct reading of the GDD after the edit; listing of the files in `Assets/_Project/Art/Source/` confirming the 5 sprites; reading of `CellView.cs` confirming it doesn't reference any sprite yet.
+
+**Learnings:** when a request specifies a section number that doesn't match the document's real content, it is worth pointing out the mismatch and placing the content where it belongs semantically, instead of creating a new section or forcing it into the place asked for — the GDD already had an open "candidate" in §6 waiting for exactly this decision.
+
+**Commit(s):** — (not committed; Cami reviews and commits).
+
+---
+
+## [10] 2026-09-23 — IPlayerController + GameConfig as a ScriptableObject
+
+**Goal:** `docs/prompts/player-controllers.md` — implement two architecture rules already declared but not built: CLAUDE.md rule 5 ("Players are interchangeable through IPlayerController...") and ADR 0001 ("The Game layer exposes GameConfig as a ScriptableObject"). `GameManager` stops assuming that every move comes from the UI and stops calling a hardcoded `GameConfig.Mvp()`.
+
+**Request / prompt:** create `IPlayerController` + `LocalHumanPlayer`, have `GameManager` receive two controllers without branching on type; `GameConfig` as a ScriptableObject (wrapper, Core untouched); the scene builder creates/wires the new config, idempotent; the UI adapts with no visual changes; the existing EditMode/PlayMode tests keep passing + a local match the same as before + a new test with a non-human controller; ai-log and ADR if appropriate.
+
+**What the AI did:**
+- Confirmed before writing code that there was no need to touch Core: everything needed was already public (`Occupant`, `Move`, `GameState.GetFreeCellIndices()`).
+- Created `IPlayerController.cs` (`Player`, `MoveChosen` event, `NotifyTurnStarted`, `NotifyCellSelected`), `LocalHumanPlayer.cs` (passively waits for the tap) and `GameConfigAsset.cs` (ScriptableObject wrapper of `GameConfig`, with a different name on purpose so as not to repeat the name ambiguity that already happened once with `SafeArea`).
+- Rewrote `GameManager.cs`: public and re-callable `Initialize(IPlayerController, IPlayerController)`, default controllers (`LocalHumanPlayer` x2) created in `Awake()` if nobody injected others before — they can't be wired from the scene builder because an interface field with an `event` doesn't survive Unity serialization. `OnCellClicked`, `StartNewGame`, `CurrentState`, `StateChanged`, `GameEnded` keep exactly the same public signature.
+- **Confirmed and verified that the UI didn't need any change**: `BoardView.cs`, `GameHud.cs`, `RestartButton.cs` stayed intact — zero lines touched, all of them keep calling the same `GameManager` API they already used.
+- `TicTacFadeSceneBuilder.cs`: `GetOrCreateGameConfigAsset()` (looks in `Assets/_Project/Config/GameConfig.asset`, creates it only if missing) + wiring of the `GameManager`'s `config` field. Verified idempotent by running the builder 2 times: the asset isn't duplicated.
+- **Design correction found by Cami in the plan review, before writing code:** the first design notified the next turn with a recursive call from inside the handling of the previous move. With two autonomous controllers (the test asked for), that stacks one stack frame per move for the whole match, and a rejected move that doesn't break the cycle produces infinite recursion → StackOverflow → hangs the Editor with no catchable exception. It was fixed with a re-entrancy flag (`_isAdvancingTurns`) + a loop in a single method (`AdvanceTurns`): a nested call doesn't open a new loop, the outermost one picks up the state change on its next iteration. `ApplyMove` stops dead on a `MoveRejectedEvent` (logs and leaves, doesn't notify again).
+- Created `FakeAutoPlayer.cs` (test only, `Assets/_Project/Tests/PlayMode/`): a non-human controller that plays the first free cell as soon as it is notified of its turn.
+- Extended `SceneWiringAndInputTests.cs`: added `GameManager` to the check for unassigned serialized references (it protects the new `config` field). Added `GameManager_TwoFakeAutoPlayers_PlayFullMatchToCompletion` — two `FakeAutoPlayer`s (not one fake + one human, an explicit request from Cami in the second review) play a full match until `IsOver`, with a cap of 60 frames that fails the test if exceeded (an independent test protection, it doesn't rely only on the production re-entrancy flag being right) and it verifies that it ended in a valid result (win with a line, or a draw by repetition/move cap).
+- Added `docs/adr/0003-player-controller-abstraction.md` — only for the controllers part; the `GameConfig` as ScriptableObject part was already decided in ADR 0001, it didn't call for a new ADR.
+- **Tooling bug, not a code bug:** when creating `LocalHumanPlayer.cs`, `GameManager.cs` couldn't resolve the type (`CS0246`) even though `IPlayerController.cs` and `GameConfigAsset.cs` —created in the same batch— compiled fine, and `validate_script` found no error in the file. Neither forcing `refresh_unity` several times nor explicitly reimporting the asset solved it. It was solved by deleting the file (`delete_script`) and recreating it identically — something was left badly registered in the asset database for that specific path/GUID on the first attempt. `unity_reflect search` (by text) still doesn't find it after the fix, but `unity_reflect get_type` (by full name) does confirm it — the text search index has its own cache, separate from the real compilation.
+
+**Human review:** Cami approved the plan with a fundamental correction (the recursion/rejection above) before a single line was written, and broadened the requested test so that it would be two autonomous controllers playing a whole match (not one fake + one human) with explicit protection against loops.
+
+**Verification:** compiles with no errors/warnings. `run_tests(EditMode)`: 33/33 Core, no regression. Scene builder run 2 times: `GameConfig.asset` is created only once, not duplicated. `run_tests(PlayMode)`: 3/3 (wiring extended to `GameManager`, double tap, full match with two `FakeAutoPlayer`s). Manual Play mode with real taps (double `Button.onClick.Invoke()` per cell): a local match plays identically to how it played before the refactor.
+
+**Learnings:** a new file can fail to resolve as a type with a misleading compiler error (`CS0246`, "a using is missing") even though the file is syntactically perfect and its siblings created in the same batch compile fine — it is worth deleting and recreating the file before chasing a code cause that doesn't exist. Reviewing an architecture plan BEFORE writing code (as Cami did here) is much cheaper than finding a StackOverflow afterwards: recursion disguised as "turn notification" doesn't look like recursion until you think specifically about the case of two chained autonomous controllers.
+
+**Commit(s):** — (not committed; Cami reviews and commits).
+
+---
+
+## [11] 2026-09-23 — Known issue: HUD covered by the punch-hole on a real device
+
+**Goal:** record a real bug found on hardware (not in the Simulator) without fixing it yet, and warn in the next iteration's prompt that its verification has to include a real device, not only the Simulator.
+
+**Request / prompt:** Cami tested the APK on a real device and found that the HUD text is covered by the camera's punch-hole — the safe area container isn't excluding it. She asked to note it as a known issue in the ai-log without fixing it (it gets solved in the menu and screen flow iteration), and to add a line to `docs/prompts/menu-flow.md` asking that iteration to verify the HUD outside the punch-hole on a real device, not only in the Simulator.
+
+**What the AI did:**
+- Added the requested line to the Verification section of `docs/prompts/menu-flow.md`.
+- Before recording the probable cause Cami gave, it confirmed it in the project instead of taking it blindly as good: `ProjectSettings/ProjectSettings.asset` has `androidRenderOutsideSafeArea: 1` — confirmed, it is the project's current value (it had already been seen in the UI part 1 investigation, it is unchanged).
+- Didn't investigate or try to fix the bug itself — that is explicitly what Cami asked not to do yet.
+
+**Known issue (unresolved):**
+- **Symptom:** on a real Android device, the HUD text (turn, counters, fade warning) is partially or totally covered by the camera cutout (punch-hole). The `SafeArea` component (`UnityEngine.UI.SafeArea`, see entry [5]) isn't excluding it from the HUD's visible area.
+- **Probable cause (confirmed as the current configuration, not as a full diagnosis of the bug):** `PlayerSettings.Android.renderOutsideSafeArea` is `true` (`androidRenderOutsideSafeArea: 1` in `ProjectSettings.asset`) — with that the app draws under the camera cutout, and apparently `Screen.safeArea` isn't compensating that zone as expected on this device. The exact root cause wasn't confirmed (it could be that option, it could also/instead be a problem of the `SafeArea` component itself or of how it is nested in `TicTacFadeSceneBuilder.CreateHud`) — it still needs to be reproduced and diagnosed calmly.
+- **Not reproducible in the Simulator:** it had already been seen in UI part 1 that the Simulator's notch/punch-hole simulation is approximate; this confirms that it isn't enough as the only verification method for safe area on devices with a camera integrated into the screen.
+- **Why it isn't fixed now:** Cami's explicit request — it gets solved in the menu and screen flow iteration (`docs/prompts/menu-flow.md`), which already touches the HUD/screens layout, and it makes sense to solve it there instead of as an isolated patch.
+
+> **Solved and corrected in [12]** (verified on a real device, Samsung Galaxy S21 FE): the probable cause above was wrong. The cause is that the `SafeArea` component had `Edges = 0` (it didn't respect any edge). `renderOutsideSafeArea` wasn't the cause. It isn't true either that the Simulator didn't reproduce it: the `Wide Pill Cutout` capture from part 1 already showed the turn at the height of the pill. See [12].
+
+**Human review:** N/A — a pure documentation task, with no code changes.
+
+**Verification:** `grep` confirming the current value of `androidRenderOutsideSafeArea` in `ProjectSettings.asset`; reading of `docs/prompts/menu-flow.md` after the edit.
+
+**Learnings:** Unity's Simulator approximates the notch/punch-hole cutout but doesn't replace testing on real hardware — it is worth, as Cami did, getting an APK out early specifically to find this kind of difference before building more on top. Confirming in the project a technical fact someone gives as a "probable cause" (instead of assuming it) is cheap and prevents an unverified hypothesis from being recorded as if it were a proven fact.
+
+**Commit(s):** — (not committed; Cami reviews and commits).
+
+---
+
+## [12] 2026-09-23 — Menu and screen flow + real cause of the punch-hole
+
+**Goal:** `docs/prompts/menu-flow.md`. The game stops starting straight on the board and gets the GDD §4.3 flow trimmed down to local: Menu → Match → Result → (Rematch | Menu). It also solves the known issue from [11].
+
+**Request / prompt:** flow state machine in Game (Menu, Playing, Result) with no screen logic in `GameManager`; menu with "Jugar local" ready for two more buttons; result screen with the reason and "Revancha"/"Menú" buttons that replaces the banner; rematch alternating who starts; all portrait, safe area, layout groups, no fixed positions; Core untouched; idempotent builder; PlayMode test of the full flow; Simulator in both profiles; HUD verified outside the punch-hole on a real device.
+
+**What the AI did:**
+- **Real cause of the punch-hole (found while putting the plan together):** `UnityEngine.UI.SafeArea` has no `Reset()` and no initial value for `m_Edges`. If it is added in code it stays at `0` = no edge respected, and the component does nothing. The previous scene had `m_Edges: 0` (read, not edited). Fix: the builder sets `Edges = Top | Right | Bottom | Left` in a single helper, `CreateSafeAreaScreen`, used by the three screens. `renderOutsideSafeArea` stays `true`.
+- Game: `FlowState.cs` (enum with explicit values, because it is serialized in the scene), `MatchFlow.cs` (table of allowed transitions + intent methods `PlayLocal`, `Rematch`, `BackToMenu`, `ExitMatch`; it switches to `Playing` **before** starting the match, because with autonomous controllers the match can end inside `StartNewGame`). `GameManager`: it doesn't start on its own, `StartNewGame(Occupant startingPlayer)`, new `DiscardMatch()`, `OnCellClicked` silently ignores if there is no match in progress.
+- UI: `FlowScreenVisibility` (CanvasGroup, not `SetActive`, so `BoardView`/`GameHud` run `Awake` and subscribe when the scene loads whatever screen is visible), `MenuScreen`, `ResultScreen` (it absorbs the end message that was in `GameHud`), `ExitMatchButton`. `GameHud` was left with only turn/counters/warning. `BoardView.OnCellClicked` has a guard against `CurrentState == null` or a finished match. `RestartButton.cs` was deleted (via MCP).
+- Builder: `GameScreen` (board centered without the fixed (0,60) offset + HUD with `TopBar`/"Salir"), `ResultScreen` (panel anchored at the bottom, so the winning line stays visible), `MenuScreen` (title + `MenuButtons`, where "Crear sala"/"Unirse" will go), `MatchFlow`. `CreateWinBanner` was deleted.
+- PlayMode tests adapted (now everything starts by tapping "Jugar local"). New test `Flow_MenuPlayRematchMenuExit_...`: a stray tap in Menu without having played (no exceptions, `CurrentState` null) → play (X) → X wins → rematch (O) → O wins → Menu → play (X) → two moves → "Salir" (Menu, match discarded, no exceptions) → play (X, empty board). The two `FakeAutoPlayer`s test now also verifies that the flow ends in `Result` even if the match ends synchronously.
+- GDD v0.5: §3.1 rule of who starts from the menu; §4.3 full flow with MVP / later and the decision of "Crear sala" without configuration.
+
+**Human review:**
+- First adjustment to the plan: (1) the plan's hierarchy seemed to list screens twice. It was the notation ("ResultScreen … + ResultScreen" = GameObject + component of the same name), not the builder; it was rewritten as `GameObject [components]` and counting objects after two runs was added to the verification. (2) That the match from the menu starts with X went into GDD §3.1 as a rule, with a version row. (3) Define what each reader of `CurrentState` does while it is null in Menu, with guards, and verify it in the test.
+- She asked to update GDD §4.3 with the full flow (waiting room, code entry) marking MVP / later, only as documentation, and to design `FlowState`/`MatchFlow` so that adding room states is adding cases.
+- Second adjustment: `Playing → Menu` transition with a discreet "Salir" button at the top, which discards the match; case added to the test.
+
+**Design items noted as pending:**
+- Each future screen (waiting room, code entry) has to define explicitly where its cancel/back button returns. It is a row of `MatchFlow`'s `AllowedTransitions` table, not a generic "back".
+- Online, `Playing → Menu` ("Salir") will be "abandon", which counts as a loss. Today in local it only discards the match.
+
+**Verification:**
+- Compiles with no errors or warnings.
 - EditMode 33/33.
-- PlayMode 4/4. El job de MCP dio timeout de inicialización, pero la corrida sí se ejecutó: resultados leídos de `TestResults.xml`, con timestamp de esa corrida.
-- Builder corrido 2 veces: `GameScreen`, `ResultScreen`, `MenuScreen`, `MatchFlow`, `GameManager` aparecen una vez cada uno, y las tres `SafeArea` quedan con `Edges = Top, Right, Bottom, Left`.
-- Play Mode en la Game view (sin recorte): HUD arriba con "Salir" a la derecha, tablero centrado, panel de resultado abajo sin superponerse con el tablero.
-- Simulator (Cami): el juego ya no queda tapado por el recorte de la cámara.
-- Device real (Cami, APK en Samsung Galaxy S21 FE): el HUD queda fuera del punch-hole y se ve todo bien. Probado en un solo modelo.
+- PlayMode 4/4. The MCP job gave an initialization timeout, but the run did execute: results read from `TestResults.xml`, with that run's timestamp.
+- Builder run 2 times: `GameScreen`, `ResultScreen`, `MenuScreen`, `MatchFlow`, `GameManager` appear once each, and the three `SafeArea`s end up with `Edges = Top, Right, Bottom, Left`.
+- Play Mode in the Game view (no cutout): HUD at the top with "Salir" on the right, board centered, result panel at the bottom without overlapping the board.
+- Simulator (Cami): the game is no longer covered by the camera cutout.
+- Real device (Cami, APK on a Samsung Galaxy S21 FE): the HUD stays outside the punch-hole and everything looks fine. Tested on a single model.
 
-**Aprendizajes:**
-- Un componente agregado por código no recibe los defaults que le da el Inspector (`Reset()`); si el tipo no inicializa sus campos, quedan en cero. Después de agregar un componente de Unity por código, revisar sus campos serializados en la escena generada.
-- El diagnóstico de [11] se registró como "causa probable" sin medir; la medición que lo habría detectado (rect de la pantalla contra `Screen.safeArea` en Y, no solo en X) ahora es parte de la verificación de UI.
+**Learnings:**
+- A component added in code doesn't get the defaults the Inspector gives it (`Reset()`); if the type doesn't initialize its fields, they stay at zero. After adding a Unity component in code, check its serialized fields in the generated scene.
+- The diagnosis in [11] was recorded as a "probable cause" without measuring; the measurement that would have detected it (the screen's rect against `Screen.safeArea` in Y, not only in X) is now part of the UI verification.
 
-**Commit(s):** — (sin commitear; Cami revisa y commitea).
+**Commit(s):** — (not committed; Cami reviews and commits).
 
 ---
 
-## [13] 2026-09-23 — Online iteración 1: salas con código, sin sincronización de juego
+## [13] 2026-09-23 — Online iteration 1: rooms with a code, without game sync
 
-**Objetivo:** que dos jugadores se encuentren en una sala con un código y queden conectados. Al conectarse, ambos ven "Rival conectado" y nada más. La sincronización de jugadas es la iteración siguiente.
+**Goal:** two players meet in a room with a code and end up connected. On connecting, both see "Rival conectado" and nothing else. Move sync is the next iteration.
 
-**Pedido / prompt:** capa `TicTacFade.Net` detrás de una interfaz en Game; Unity Services + autenticación anónima; perfiles distintos por instancia de Multiplayer Play Mode; estados nuevos al final de `FlowState` con sus filas en la tabla; "Crear sala" → sala de espera (código grande, copiar, cancelar); "Unirse con código" → pantalla con campo, unirse, cancelar, errores legibles sin salir; cada cancelar con destino explícito; estados de carga con botones deshabilitados y "Conectando..."; errores de red con mensaje y vuelta a un estado estable. Paquetes autorizados: Multiplayer Services, Netcode for GameObjects, Multiplayer Play Mode.
+**Request / prompt:** `TicTacFade.Net` layer behind an interface in Game; Unity Services + anonymous authentication; different profiles per Multiplayer Play Mode instance; new states at the end of `FlowState` with their rows in the table; "Crear sala" → waiting room (big code, copy, cancel); "Unirse con código" → screen with field, join, cancel, readable errors without leaving; each cancel with an explicit destination; loading states with disabled buttons and "Conectando..."; network errors with a message and a return to a stable state. Authorized packages: Multiplayer Services, Netcode for GameObjects, Multiplayer Play Mode.
 
-**Qué hizo la IA:**
-- **Paquetes:** Multiplayer Services 2.3.3 ya estaba (instalado por Cami). Instaló Netcode for GameObjects 2.13.3 y Multiplayer Play Mode 3.0.0, las versiones que el registry resuelve para Unity 6000.6. MPPM 3.0.0 es *builtin* en 6.6. Por dependencia entraron `transport` 2.7.3, `services.core` 1.18.0, `services.authentication` 3.7.4, `qos`, `wire`, `deployment` y `deployment.api`.
-- Antes de diseñar, leyó el código de los paquetes instalados en vez de asumir la API:
-  - `CurrentPlayer.IsMainEditor`/`Tags` es la API de identidad de MPPM (no hay índice de jugador).
-  - Authentication ya deriva un perfil por instancia desde los argumentos `-editor-mode -name`, pero solo con el perfil "default" y sin documentarlo.
-  - Services Core no se autoinicializa.
-  - `WithRelayNetwork` exige `NetworkManager.Singleton`.
-  - `StopAsync` del SDK espera el apagado del `NetworkManager` y el SDK pide no llamar a `Shutdown()` a mano.
+**What the AI did:**
+- **Packages:** Multiplayer Services 2.3.3 was already there (installed by Cami). It installed Netcode for GameObjects 2.13.3 and Multiplayer Play Mode 3.0.0, the versions the registry resolves for Unity 6000.6. MPPM 3.0.0 is *builtin* in 6.6. As dependencies, `transport` 2.7.3, `services.core` 1.18.0, `services.authentication` 3.7.4, `qos`, `wire`, `deployment` and `deployment.api` came in.
+- Before designing, it read the code of the installed packages instead of assuming the API:
+  - `CurrentPlayer.IsMainEditor`/`Tags` is MPPM's identity API (there is no player index).
+  - Authentication already derives a profile per instance from the `-editor-mode -name` arguments, but only with the "default" profile and without documenting it.
+  - Services Core doesn't auto-initialize.
+  - `WithRelayNetwork` requires `NetworkManager.Singleton`.
+  - The SDK's `StopAsync` waits for the `NetworkManager` shutdown, and the SDK asks not to call `Shutdown()` by hand.
 - **Game:**
-  - `ISessionService`, `SessionServiceBehaviour` (base serializable), `SessionResult` y `SessionFailure`.
-  - `FlowState` suma `Lobby = 3` y `JoinByCode = 4`.
-  - `MatchFlow`: filas nuevas en la tabla (`Menu → {Playing, Lobby, JoinByCode}`, `Lobby → {Menu}`, `JoinByCode → {Lobby, Menu}`). Intenciones `CreateRoom`, `OpenJoinByCode`, `JoinRoom`, `CancelJoinByCode`, `LeaveRoom`. Flag `IsBusy`: el flujo ignora toda intención mientras hay una operación en curso, así que la protección contra el doble toque no depende de la UI. Validación local del código (vacío o no alfanumérico no sale a la red), normalizado a mayúsculas.
-- **Net** (asmdef nuevo `TicTacFade.Net`, `Net → Game → Core`):
-  - `UgsSessionService`: sesiones privadas de 2 con Relay, inicialización y login perezosos, timeout propio (`SerializeField`, 15 s). Si una operación termina después del timeout, la sala huérfana se abandona. El host cierra la sala con `DeleteAsync`. Antes de cada crear/unirse espera a que el `NetworkManager` quede libre, y si el SDK lo dejara corriendo lo apaga como último recurso.
-  - `SessionFailureMapper` traduce las excepciones del SDK.
-  - `PlayModeAuthProfile` elige el perfil de autenticación de cada jugador virtual de MPPM.
+  - `ISessionService`, `SessionServiceBehaviour` (serializable base), `SessionResult` and `SessionFailure`.
+  - `FlowState` adds `Lobby = 3` and `JoinByCode = 4`.
+  - `MatchFlow`: new rows in the table (`Menu → {Playing, Lobby, JoinByCode}`, `Lobby → {Menu}`, `JoinByCode → {Lobby, Menu}`). Intents `CreateRoom`, `OpenJoinByCode`, `JoinRoom`, `CancelJoinByCode`, `LeaveRoom`. `IsBusy` flag: the flow ignores every intent while an operation is in progress, so the double-tap protection doesn't depend on the UI. Local validation of the code (empty or non-alphanumeric doesn't go to the network), normalized to uppercase.
+- **Net** (new asmdef `TicTacFade.Net`, `Net → Game → Core`):
+  - `UgsSessionService`: private sessions of 2 with Relay, lazy initialization and login, its own timeout (`SerializeField`, 15 s). If an operation finishes after the timeout, the orphaned room is abandoned. The host closes the room with `DeleteAsync`. Before each create/join it waits for the `NetworkManager` to be free, and if the SDK left it running it shuts it down as a last resort.
+  - `SessionFailureMapper` translates the SDK exceptions.
+  - `PlayModeAuthProfile` picks the authentication profile of each MPPM virtual player.
 - **UI:**
-  - `MenuScreen` suma "Crear sala", "Unirse con código" y una línea de estado ("Conectando..." / error).
-  - `LobbyScreen`: código a 120 pt, "Copiar", estado ("Esperando rival..." / "Rival conectado" / "Cerrando sala...") y "Cancelar".
-  - `JoinByCodeScreen`: `InputField` alfanumérico, "Unirse", "Cancelar" y error.
-  - `SessionFailureMessages` tiene los textos en español.
-- **Builder:** `NetworkManager` + `UnityTransport`, `SessionService`, `LobbyScreen`, `JoinByCodeScreen` (las dos con `CreateSafeAreaScreen`) y los helpers `CreateCenteredColumn`/`CreateLabel`/`CreateCodeInput`.
-- **Tests PlayMode nuevos** (`OnlineFlowTests`, con `FakeSessionService` sin red inyectado con `MatchFlow.SetSessionService`):
-  - partida local completa + revancha + salir sin inicializar Unity Services (`UnityServices.State == Uninitialized`, pedido de Cami);
-  - doble toque en "Crear sala" crea una sola sala;
-  - falla de red se queda en el menú con mensaje;
-  - código vacío no sale a la red;
-  - código rechazado se queda en la pantalla con error;
-  - unirse muestra "Rival conectado";
-  - rival entra y sale;
-  - cancelar desde la pantalla de código;
-  - crear → cancelar dos veces y unirse → cancelar dos veces, y después "Jugar local" arranca con X;
-  - sala perdida vuelve al menú con mensaje.
-  - `SceneWiringAndInputTests` suma las pantallas nuevas al chequeo de referencias.
-- **Hallazgo contra el servicio real:** un código inexistente con formato válido (`BBBBBB`) llega como `SessionNotFound` y se muestra "Código inválido", bien. Pero `ZZZZZZ` llegó como `SessionError.Unknown` ("contains an invalid character 'Z'"): el alfabeto de los códigos de lobby no incluye todas las letras. Leyendo `LobbyConverter.ToSessionException`, el SDK descarta la `LobbyServiceException` original y solo traduce `LobbyNotFound`, así que sala llena y código mal formado son indistinguibles. La primera versión del mapper buscaba `LobbyServiceException` en la cadena de excepciones interna: código muerto, se sacó. Se agregó `SessionFailure.JoinRejected` con un mensaje genérico de unión ("No se pudo unir a la sala. Revisá el código o pedí uno nuevo.") en vez del "No se pudo conectar", que sugería un problema de red. No se validó el alfabeto localmente porque no está documentado.
+  - `MenuScreen` adds "Crear sala", "Unirse con código" and a status line ("Conectando..." / error).
+  - `LobbyScreen`: code at 120 pt, "Copiar", status ("Esperando rival..." / "Rival conectado" / "Cerrando sala...") and "Cancelar".
+  - `JoinByCodeScreen`: alphanumeric `InputField`, "Unirse", "Cancelar" and error.
+  - `SessionFailureMessages` has the texts in Spanish.
+- **Builder:** `NetworkManager` + `UnityTransport`, `SessionService`, `LobbyScreen`, `JoinByCodeScreen` (both with `CreateSafeAreaScreen`) and the helpers `CreateCenteredColumn`/`CreateLabel`/`CreateCodeInput`.
+- **New PlayMode tests** (`OnlineFlowTests`, with a network-free `FakeSessionService` injected with `MatchFlow.SetSessionService`):
+  - full local match + rematch + exit without initializing Unity Services (`UnityServices.State == Uninitialized`, Cami's request);
+  - double tap on "Crear sala" creates a single room;
+  - a network failure stays in the menu with a message;
+  - an empty code doesn't go to the network;
+  - a rejected code stays on the screen with an error;
+  - joining shows "Rival conectado";
+  - opponent joins and leaves;
+  - cancel from the code screen;
+  - create → cancel twice and join → cancel twice, and then "Jugar local" starts with X;
+  - a lost room goes back to the menu with a message.
+  - `SceneWiringAndInputTests` adds the new screens to the references check.
+- **Finding against the real service:** a nonexistent code with a valid format (`BBBBBB`) arrives as `SessionNotFound` and "Código inválido" is shown, fine. But `ZZZZZZ` arrived as `SessionError.Unknown` ("contains an invalid character 'Z'"): the lobby code alphabet doesn't include every letter. Reading `LobbyConverter.ToSessionException`, the SDK discards the original `LobbyServiceException` and only translates `LobbyNotFound`, so a full room and a malformed code are indistinguishable. The first version of the mapper looked for `LobbyServiceException` in the inner exception chain: dead code, it was removed. `SessionFailure.JoinRejected` was added with a generic join message ("No se pudo unir a la sala. Revisá el código o pedí uno nuevo.") instead of "No se pudo conectar", which suggested a network problem. The alphabet wasn't validated locally because it isn't documented.
 
-**Revisión humana:**
-- Aprobó el plan con tres respuestas:
-  - inicialización perezosa (Cami corrigió su propio pedido de inicializar al arrancar) más un test que confirme que el modo local nunca inicializa Unity Services;
-  - sala llena con mensaje genérico si el SDK no la distingue;
-  - timeout como `SerializeField` del servicio.
-- Sumó a la verificación manual: crear → cancelar → crear y unirse → cancelar → unirse dos veces seguidas (por si el `NetworkManager` no se apaga del todo), "Jugar local" después de cancelar una sala, y "Copiar" en el celular (si el portapapeles falla, el código tiene que quedar legible para copiarlo a mano).
+**Human review:**
+- She approved the plan with three answers:
+  - lazy initialization (Cami corrected her own request to initialize at startup) plus a test confirming that local mode never initializes Unity Services;
+  - full room with a generic message if the SDK doesn't tell it apart;
+  - timeout as a `SerializeField` of the service.
+- She added to the manual verification: create → cancel → create and join → cancel → join twice in a row (in case the `NetworkManager` doesn't shut down completely), "Jugar local" after cancelling a room, and "Copiar" on the phone (if the clipboard fails, the code has to stay readable to copy it by hand).
 
-**Verificación:**
-- Compila sin errores. Quedan warnings `CS0618` de `FindFirstObjectByType`/`FindObjectsSortMode` (obsoletos en Unity 6.6) en `SceneWiringAndInputTests.cs`, código previo a esta tarea: anotado, no tocado. En el archivo nuevo se usó `FindAnyObjectByType`.
-- EditMode 33/33. PlayMode 14/14 (4 existentes + 10 nuevos); 31/31 después de la segunda vuelta (ver abajo).
-- Builder corrido 2 veces: una instancia de cada pantalla, `NetworkManager` y `SessionService`; las cinco `SafeArea` con los cuatro bordes; `NetworkManager` con `UnityTransport`.
-- **Contra el servicio real, en el editor principal (una sola instancia):**
-  - login anónimo OK (perfil `default`);
-  - crear sala da el código `LD7987` con el `NetworkManager` como host;
-  - cancelar vuelve al menú con el `NetworkManager` apagado del todo (`IsListening=false`, `ShutdownInProgress=false`);
-  - una segunda creación funciona (código `B6DRRR`);
+**Verification:**
+- Compiles with no errors. `CS0618` warnings of `FindFirstObjectByType`/`FindObjectsSortMode` (obsolete in Unity 6.6) remain in `SceneWiringAndInputTests.cs`, code from before this task: noted, not touched. In the new file `FindAnyObjectByType` was used.
+- EditMode 33/33. PlayMode 14/14 (4 existing + 10 new); 31/31 after the second round (see below).
+- Builder run 2 times: one instance of each screen, `NetworkManager` and `SessionService`; the five `SafeArea`s with the four edges; `NetworkManager` with `UnityTransport`.
+- **Against the real service, in the main editor (a single instance):**
+  - anonymous login OK (`default` profile);
+  - creating a room gives the code `LD7987` with the `NetworkManager` as host;
+  - cancel goes back to the menu with the `NetworkManager` completely shut down (`IsListening=false`, `ShutdownInProgress=false`);
+  - a second creation works (code `B6DRRR`);
   - `BBBBBB` → "Código inválido";
-  - cancelar la pantalla de código → menú, y "Jugar local" arranca con X;
-  - sin errores en consola.
-- **Device real (Cami, APK en dos dispositivos distintos):** crear sala y unirse con el código funciona, y los dos quedan conectados en la sala de espera. La partida no arranca, que es lo esperado en esta iteración (la transición `Lobby → Playing` es de la siguiente).
-- **Pendiente (Cami), con dos jugadores en Multiplayer Play Mode:** pasos abajo.
-- **Pendiente (Cami):** "Copiar" en el celular.
+  - cancelling the code screen → menu, and "Jugar local" starts with X;
+  - no errors in the console.
+- **Real device (Cami, APK on two different devices):** creating a room and joining with the code works, and both end up connected in the waiting room. The match doesn't start, which is expected in this iteration (the `Lobby → Playing` transition belongs to the next one).
+- **Pending (Cami), with two players in Multiplayer Play Mode:** steps below.
+- **Pending (Cami):** "Copiar" on the phone.
 
-**Cómo reproducir la prueba con Multiplayer Play Mode** (se repite en cada iteración de online):
-1. Abrir `Window > Multiplayer > Multiplayer Play Mode` (ruta documentada de MPPM; en Unity 6.6 el paquete es builtin y no se pudo confirmar la ruta del menú por código: si difiere, corregir este paso).
-2. Activar **Player 2** (y **Player 3** solo para la prueba de sala llena). Esperar a que termine de abrir su ventana.
-3. Tener abierta la escena `Assets/_Project/Scenes/TicTacFadeGame.unity` y entrar en Play en el editor principal: los jugadores virtuales entran en Play con él.
-4. Identidades distintas: en la consola de cada instancia tiene que aparecer, en el primer crear/unirse, `Tic-Tac-Fade: signed in anonymously. PlayerId=..., profile=...`. El editor principal usa `profile=default`; cada jugador virtual, `profile=mppm_xxxxxxxx`. Los `PlayerId` tienen que ser distintos entre instancias.
-5. **Crear y unirse:** Player 1 → "Crear sala". Tiene que aparecer "Conectando..." con los botones deshabilitados y después la sala de espera con el código y "Esperando rival...". Player 2 → "Unirse con código" → escribir el código → "Unirse" → sala de espera con "Rival conectado". Player 1 tiene que pasar a "Rival conectado".
-6. **Código inválido:** Player 2 → "Unirse con código" → `BBBBBB` (formato válido, sala inexistente) → "Código inválido...", sigue en la pantalla. Con un código con caracteres fuera del alfabeto (p. ej. `ZZZZZZ`) → también "Código inválido...", y esta vez sin salir a la red.
-7. **Cancelar desde la sala de espera:** con los dos adentro, Player 1 → "Cancelar" → menú. Player 2 tiene que volver al menú con "La sala se cerró.".
-8. **Cancelar desde la pantalla de código:** Player 2 → "Unirse con código" → "Cancelar" → menú, sin mensaje.
-9. **Dos veces seguidas:** Player 1: crear → cancelar → crear → cancelar (la segunda creación tiene que dar otro código sin error). Player 2: unirse → cancelar → unirse → cancelar, contra una sala abierta de Player 1.
-10. **Local después de online:** tras cancelar una sala, "Jugar local" arranca una partida normal con X.
-11. **Sala llena (opcional, Player 3):** Player 1 crea, Player 2 se une, Player 3 intenta unirse con el mismo código → mensaje genérico "No se pudo unir a la sala..." (el SDK no distingue sala llena, ver arriba).
-12. En ninguna instancia tiene que haber errores en consola. Los `LogWarning` de "session operation failed" son esperados en los casos de error.
+**How to reproduce the test with Multiplayer Play Mode** (it is repeated in every online iteration):
+1. Open `Window > Multiplayer > Multiplayer Play Mode` (MPPM's documented path; in Unity 6.6 the package is builtin and the menu path couldn't be confirmed in code: if it differs, correct this step).
+2. Enable **Player 2** (and **Player 3** only for the full-room test). Wait until its window finishes opening.
+3. Have the `Assets/_Project/Scenes/TicTacFadeGame.unity` scene open and enter Play in the main editor: the virtual players enter Play with it.
+4. Different identities: in each instance's console, on the first create/join, `Tic-Tac-Fade: signed in anonymously. PlayerId=..., profile=...` has to appear. The main editor uses `profile=default`; each virtual player, `profile=mppm_xxxxxxxx`. The `PlayerId`s have to differ between instances.
+5. **Create and join:** Player 1 → "Crear sala". "Conectando..." has to appear with the buttons disabled and then the waiting room with the code and "Esperando rival...". Player 2 → "Unirse con código" → type the code → "Unirse" → waiting room with "Rival conectado". Player 1 has to switch to "Rival conectado".
+6. **Invalid code:** Player 2 → "Unirse con código" → `BBBBBB` (valid format, nonexistent room) → "Código inválido...", it stays on the screen. With a code with characters outside the alphabet (e.g. `ZZZZZZ`) → also "Código inválido...", and this time without going to the network.
+7. **Cancel from the waiting room:** with both inside, Player 1 → "Cancelar" → menu. Player 2 has to go back to the menu with "La sala se cerró.".
+8. **Cancel from the code screen:** Player 2 → "Unirse con código" → "Cancelar" → menu, with no message.
+9. **Twice in a row:** Player 1: create → cancel → create → cancel (the second creation has to give another code with no error). Player 2: join → cancel → join → cancel, against an open room of Player 1.
+10. **Local after online:** after cancelling a room, "Jugar local" starts a normal match with X.
+11. **Full room (optional, Player 3):** Player 1 creates, Player 2 joins, Player 3 tries to join with the same code → generic message "No se pudo unir a la sala..." (the SDK doesn't tell a full room apart, see above).
+12. There must be no console errors in any instance. The "session operation failed" `LogWarning`s are expected in the error cases.
 
-**Segunda vuelta (tras la prueba de Cami en device y los warnings que capturó):**
-- **Device (Cami):** "Copiar" funciona en el celular y el flujo es correcto.
+**Second round (after Cami's test on a device and the warnings she captured):**
+- **Device (Cami):** "Copiar" works on the phone and the flow is correct.
 - **Warning `[Netcode] Singleton is not null after invoking OnDestroy`:**
-  - Causa: `NetworkManager` se mueve solo a `DontDestroyOnLoad` y el Singleton queda siendo el primero. Cada recarga de escena trae uno nuevo y el anterior sobrevive. Al salir de Play, cada uno que sobra tira el warning.
-  - Reproducido a mano: una recarga deja 2 `NetworkManager` en DDOL y el warning aparece al salir; Play → Stop sin recarga, no aparece.
-  - El primer intento de reproducirlo dio un falso negativo: contó 1 `NetworkManager` porque la recarga todavía no había ocurrido. Se repitió verificando que la escena se hubiera recargado de verdad.
-  - El juego carga la escena una sola vez; los PlayMode tests la recargan en cada test.
-  - Fix, solo en tests: `NetworkTestCleanup` y un `[UnityTearDown]` en las dos clases de PlayMode que destruye todos los `NetworkManager` después de cada test.
-  - Verificado: suite completa (unas 15 recargas) sin el warning. No se volvió a correr la suite sin el fix para comparar; la reproducción manual cubre el "antes".
-  - Si algún día volver al menú pasa a ser una recarga de escena, esto hay que resolverlo en el juego, no solo en los tests.
-- **Warning de `ZZZZZZ`:** era del código previo al fix de `JoinRejected` (línea 186, `(Unknown)`), esperado.
-- **Alfabeto del código (pedido de Cami):**
-  - El mensaje "invalid character" no está en el SDK: lo devuelve el servidor. El SDK no documenta el formato de los códigos de Lobby.
-  - Sí documenta el de Relay (`Relay/Models/JoinRequest.cs`): sin distinguir mayúsculas, 6 a 12 caracteres, solo `6789BCDFGHJKLMNPQRTW`.
-  - El servicio real es consistente con eso: generó `LD7987` y `B6DRRR`, rechazó la `Z` y aceptó el formato de `BBBBBB`.
-  - Se implementó `JoinCodeFormat` en Net, expuesto como `ISessionService.IsWellFormedCode`, porque el formato es del proveedor y Game no debe conocerlo. Reemplaza la validación alfanumérica anterior de `MatchFlow`, que era más permisiva que el servicio.
-  - `MapJoin`: un error de formato que igual llegue del servicio se reconoce por el mensaje (única señal que deja el SDK) y da `InvalidCode`, no `JoinRejected`.
-  - El fake usa la regla de formato real; los códigos de los tests pasaron a `BCD678`/`BCD789`.
-- **Tests nuevos:** `JoinByCode_CharacterOutsideAlphabet_RejectedLocallyAsInvalidCode` (`ZZZZZZ` no sale a la red y muestra "Código inválido"), y `NetSessionRulesTests`: 16 casos de formato y de mapeo, incluido el mensaje exacto que devolvió el servicio real.
-- **Runner de MCP con 0 tests:**
-  - Durante un rato, `run_tests(PlayMode)` vía MCP ejecutó 0 tests (tres intentos: todos, por assembly y por nombre), mientras el editor listaba los 14 y EditMode vía MCP andaba.
-  - La hipótesis de la IA (jugadores virtuales de MPPM activos) resultó falsa: con MPPM apagado siguió dando 0, y Cami corrió los tests a mano y pasaban.
-  - Después de recompilar volvió a funcionar (31/31). Causa no determinada; probablemente del lado del runner de MCP.
-- **Verificación de esta vuelta:** compila sin errores; EditMode 33/33; PlayMode 31/31 vía MCP; consola sin errores ni warnings después de la suite.
+  - Cause: `NetworkManager` moves itself to `DontDestroyOnLoad` and the Singleton stays as the first one. Each scene reload brings a new one and the previous one survives. On leaving Play, each extra one throws the warning.
+  - Reproduced by hand: one reload leaves 2 `NetworkManager`s in DDOL and the warning shows up on leaving; Play → Stop without a reload, it doesn't show up.
+  - The first attempt to reproduce it gave a false negative: it counted 1 `NetworkManager` because the reload hadn't happened yet. It was repeated verifying that the scene had really reloaded.
+  - The game loads the scene only once; the PlayMode tests reload it in each test.
+  - Fix, in tests only: `NetworkTestCleanup` and a `[UnityTearDown]` in the two PlayMode classes that destroys every `NetworkManager` after each test.
+  - Verified: full suite (about 15 reloads) without the warning. The suite wasn't run again without the fix to compare; the manual reproduction covers the "before".
+  - If some day going back to the menu becomes a scene reload, this has to be solved in the game, not only in the tests.
+- **`ZZZZZZ` warning:** it was from the code before the `JoinRejected` fix (line 186, `(Unknown)`), expected.
+- **Code alphabet (Cami's request):**
+  - The "invalid character" message isn't in the SDK: the server returns it. The SDK doesn't document the Lobby code format.
+  - It does document the Relay one (`Relay/Models/JoinRequest.cs`): case-insensitive, 6 to 12 characters, only `6789BCDFGHJKLMNPQRTW`.
+  - The real service is consistent with that: it generated `LD7987` and `B6DRRR`, rejected the `Z` and accepted the format of `BBBBBB`.
+  - `JoinCodeFormat` was implemented in Net, exposed as `ISessionService.IsWellFormedCode`, because the format belongs to the provider and Game must not know it. It replaces `MatchFlow`'s previous alphanumeric validation, which was more permissive than the service.
+  - `MapJoin`: a format error that still comes from the service is recognized by the message (the only signal the SDK leaves) and gives `InvalidCode`, not `JoinRejected`.
+  - The fake uses the real format rule; the tests' codes became `BCD678`/`BCD789`.
+- **New tests:** `JoinByCode_CharacterOutsideAlphabet_RejectedLocallyAsInvalidCode` (`ZZZZZZ` doesn't go to the network and shows "Código inválido"), and `NetSessionRulesTests`: 16 format and mapping cases, including the exact message the real service returned.
+- **MCP runner with 0 tests:**
+  - For a while, `run_tests(PlayMode)` via MCP ran 0 tests (three attempts: all, by assembly and by name), while the editor listed the 14 and EditMode via MCP worked.
+  - The AI's hypothesis (active MPPM virtual players) turned out to be false: with MPPM off it kept giving 0, and Cami ran the tests by hand and they passed.
+  - After recompiling it worked again (31/31). Cause undetermined; probably on the MCP runner's side.
+- **Verification of this round:** compiles with no errors; EditMode 33/33; PlayMode 31/31 via MCP; console with no errors or warnings after the suite.
 
-**Tercera vuelta:**
-- **Regla del CLAUDE.md sobre el runner de MCP:**
-  - Cami había propuesto: "No correr los tests PlayMode con jugadores virtuales de Multiplayer Play Mode activos: el runner del editor principal ejecuta 0 tests."
-  - Se descartó porque la evidencia la desmintió: con MPPM apagado el runner de MCP siguió dando 0, los tests corridos a mano pasaban, y el runner volvió a funcionar tras recompilar sin tocar MPPM.
-  - Se agregó en su lugar la redacción de la IA, aprobada por Cami (en inglés, como el resto del CLAUDE.md): si `run_tests` de PlayMode vía MCP reporta 0 tests, no darlo como pasado; recompilar y reintentar; si persiste, Cami corre la suite desde el Test Runner del editor. Causa no determinada.
-- **Red de seguridad para el alfabeto (pedido de Cami):**
-  - Al crear una sala, el código que devuelve el servicio se valida contra `JoinCodeFormat`. Si no pasa, se loguea un error explícito: la regla local se volvió más estricta que el servicio.
-  - El riesgo es asimétrico: una regla demasiado estricta impide unirse a salas reales, y sin este chequeo no habría ninguna señal.
-  - Implementado como `JoinCodeFormat.CheckGeneratedCode`, testeable sin red, y llamado desde `UgsSessionService.Attach` solo para el host.
-  - El mensaje del log está en inglés por la convención de los `.cs`: "the room code format changed: local validation would reject the generated code '…'".
-  - Tests: dos códigos reales (uno en minúsculas) pasan sin loguear; `AB12CD` devuelve false y loguea el error (`LogAssert.Expect`, así que el test falla si el chequeo deja de loguear).
-- **Verificación:** compila sin errores; EditMode 33/33; PlayMode 34/34 vía MCP. El único error en consola es el que el test del caso negativo genera a propósito.
+**Third round:**
+- **CLAUDE.md rule about the MCP runner:**
+  - Cami had proposed: "Don't run the PlayMode tests with Multiplayer Play Mode virtual players active: the main editor's runner runs 0 tests."
+  - It was ruled out because the evidence contradicted it: with MPPM off the MCP runner kept giving 0, the tests run by hand passed, and the runner worked again after recompiling without touching MPPM.
+  - The AI's wording, approved by Cami, was added instead (in English, like the rest of CLAUDE.md): if `run_tests` for PlayMode via MCP reports 0 tests, don't count it as passed; recompile and retry; if it persists, Cami runs the suite from the editor's Test Runner. Cause undetermined.
+- **Safety net for the alphabet (Cami's request):**
+  - When creating a room, the code the service returns is validated against `JoinCodeFormat`. If it doesn't pass, an explicit error is logged: the local rule became stricter than the service.
+  - The risk is asymmetric: a rule that is too strict prevents joining real rooms, and without this check there would be no signal at all.
+  - Implemented as `JoinCodeFormat.CheckGeneratedCode`, testable without a network, and called from `UgsSessionService.Attach` only for the host.
+  - The log message is in English because of the `.cs` convention: "the room code format changed: local validation would reject the generated code '…'".
+  - Tests: two real codes (one in lowercase) pass without logging; `AB12CD` returns false and logs the error (`LogAssert.Expect`, so the test fails if the check stops logging).
+- **Verification:** compiles with no errors; EditMode 33/33; PlayMode 34/34 via MCP. The only error in the console is the one the negative-case test generates on purpose.
 
-**Pendientes de diseño anotados:**
-- La transición `Lobby → Playing` (arrancar la partida online al conectarse el rival) es de la iteración siguiente.
-- En online, "Salir" de una partida va a ser "abandonar" (ver [12]).
-- ~~No hay test automático de `SessionFailureMapper`~~: resuelto en la segunda vuelta (`NetSessionRulesTests`). `SessionException` tiene un constructor público de 3 argumentos.
+**Design items noted as pending:**
+- The `Lobby → Playing` transition (starting the online match when the opponent connects) belongs to the next iteration.
+- Online, "Salir" from a match will be "abandon" (see [12]).
+- ~~There is no automated test of `SessionFailureMapper`~~: solved in the second round (`NetSessionRulesTests`). `SessionException` has a public 3-argument constructor.
 
-**Aprendizajes:**
-- Leer el código del paquete instalado antes de diseñar encontró tres cosas que habrían sido bugs o supuestos falsos: el perfil automático de MPPM oculto, que `WithRelayNetwork` exige un `NetworkManager` y que el SDK descarta la excepción original de lobby.
-- Probar contra el servicio real, aunque sea con una sola instancia, detectó que un código mal formado mostraba "No se pudo conectar". Los tests con fake no lo podían ver, porque el fake devuelve lo que el test le dice.
+**Learnings:**
+- Reading the installed package's code before designing found three things that would have been bugs or false assumptions: MPPM's hidden automatic profile, that `WithRelayNetwork` requires a `NetworkManager`, and that the SDK discards the original lobby exception.
+- Testing against the real service, even with a single instance, detected that a malformed code showed "No se pudo conectar". The tests with a fake couldn't see it, because the fake returns what the test tells it.
 
-**Commit(s):** — (sin commitear; Cami revisa y commitea).
+**Commit(s):** — (not committed; Cami reviews and commits).
 
 ---
 
-## [14] 2026-09-23 — Online iteración 2: partida jugable entre dos dispositivos
+## [14] 2026-09-23 — Online iteration 2: playable match between two devices
 
-**Objetivo:** `docs/prompts/online-2-moves.md`. Cuando el rival se conecta a la sala, la partida arranca sola en los dos dispositivos y se juega completa por red hasta el resultado, con revancha. Timer, desconexiones en medio de partida y abandono quedan para la iteración 3.
+**Goal:** `docs/prompts/online-2-moves.md`. When the opponent connects to the room, the match starts on its own on both devices and is played to the result over the network, with rematch. Timer, mid-match disconnections and abandonment are left for iteration 3.
 
-**Pedido / prompt:**
-- Modelo host-autoritativo: el cliente nunca aplica su propia jugada; el host valida con `RulesEngine.IsLegal` y difunde; en los dos dispositivos `GameManager` solo recibe jugadas confirmadas, a través de un `RemotePlayer` que es un `IPlayerController` más.
-- Comparación de hash de posición después de cada jugada; si difiere, se corta la partida.
-- Host siempre X y cliente siempre O; la revancha alterna quién empieza.
-- Elegir entre RPCs y mensajes con nombre, y justificarlo.
-- Tablero solo con input en tu turno y sin doble envío; HUD "Tu turno" / "Turno del rival".
-- Revancha con pedido de ambos; "Menú" y "Salir" cierran la sesión y el otro ve "El rival salió".
-- Test con dos `GameManager` y un transporte en memoria.
+**Request / prompt:**
+- Host-authoritative model: the client never applies its own move; the host validates with `RulesEngine.IsLegal` and broadcasts; on both devices `GameManager` only receives confirmed moves, through a `RemotePlayer` that is one more `IPlayerController`.
+- Position hash comparison after each move; if it differs, the match is cut.
+- Host always X and client always O; the rematch alternates who starts.
+- Choose between RPCs and named messages, and justify it.
+- Board with input only on your turn and no double send; HUD "Tu turno" / "Turno del rival".
+- Rematch requested by both; "Menú" and "Salir" close the session and the other sees "El rival salió".
+- Test with two `GameManager`s and an in-memory transport.
 
-**Qué hizo la IA:**
-- **Plan con decisiones a aprobar:** exponer `PositionKey.Value` (Core) e incorporar tres miembros nuevos a `IPlayerController`. Cami aprobó con ajustes (ver Revisión humana).
-- **Transporte:** mensajes con nombre (`CustomMessagingManager`), no RPCs: no necesitan `NetworkObject`, prefab ni spawn, y un `NetworkObject` en una escena generada por código es frágil (`GlobalObjectIdHash`). Un solo mensaje con byte de tipo; todos con `NetworkDelivery.ReliableSequenced` explícito. Justificado en el ADR 0002. Se verificaron en el código de NGO 2.13.3 las firmas de `RegisterNamedMessageHandler`, `SendNamedMessage` y los eventos de conexión antes de usarlas.
-- **Core:** `PositionKey.Value` público (sin cambios de reglas) y un test EditMode que verifica que el valor sigue exactamente la igualdad de claves.
+**What the AI did:**
+- **Plan with decisions to approve:** expose `PositionKey.Value` (Core) and add three new members to `IPlayerController`. Cami approved with adjustments (see Human review).
+- **Transport:** named messages (`CustomMessagingManager`), not RPCs: they don't need a `NetworkObject`, prefab or spawn, and a `NetworkObject` in a scene generated in code is fragile (`GlobalObjectIdHash`). A single message with a type byte; all with an explicit `NetworkDelivery.ReliableSequenced`. Justified in ADR 0002. The signatures of `RegisterNamedMessageHandler`, `SendNamedMessage` and the connection events were verified in the NGO 2.13.3 code before using them.
+- **Core:** public `PositionKey.Value` (no rule changes) and an EditMode test that verifies that the value follows key equality exactly.
 - **Game:**
-  - `IPlayerController` suma `IsLocalHuman`, `AcceptsLocalInput` y `AcceptsLocalInputChanged`. `LocalHumanPlayer` queda igual en comportamiento.
-  - Nuevos `OnlineLocalPlayer` (un toque propone y bloquea el input hasta la confirmación o el rechazo) y `RemotePlayer`, ambos con `IConfirmedMoveReceiver`.
-  - `GameManager` expone `CanAcceptLocalInput`, `IsLocalHuman(Occupant)` y `LocalInputAvailabilityChanged`, y `OnCellClicked` usa esa guarda. Su lógica de partida no cambió y no sabe que hay red.
-  - Nuevos `MatchMessage`, `IMatchTransport` + `MatchTransportBehaviour` (con buffer de entrada hasta `Open`) y `OnlineMatch` (autoridad, confirmaciones, `Ack` con clave, desync, revancha de a dos).
-  - `MatchFlow`: fila `Lobby → Playing`; abre el `OnlineMatch` al entrar a la sala; revancha, "Menú" y "Salir" online; "El rival salió" y "Se perdió la sincronización" como `SessionFailure` nuevos. Al salir de online restaura los dos `LocalHumanPlayer`.
-- **Net:** `NgoMatchTransport` registra el handler al arrancar la red (antes de que el cliente termine de conectar) y dispara `PeerConnected` con `OnClientConnectedCallback`.
+  - `IPlayerController` adds `IsLocalHuman`, `AcceptsLocalInput` and `AcceptsLocalInputChanged`. `LocalHumanPlayer` stays the same in behavior.
+  - New `OnlineLocalPlayer` (a tap proposes and locks the input until confirmation or rejection) and `RemotePlayer`, both with `IConfirmedMoveReceiver`.
+  - `GameManager` exposes `CanAcceptLocalInput`, `IsLocalHuman(Occupant)` and `LocalInputAvailabilityChanged`, and `OnCellClicked` uses that guard. Its match logic didn't change and it doesn't know there is a network.
+  - New `MatchMessage`, `IMatchTransport` + `MatchTransportBehaviour` (with an inbound buffer until `Open`) and `OnlineMatch` (authority, confirmations, `Ack` with key, desync, two-player rematch).
+  - `MatchFlow`: `Lobby → Playing` row; it opens the `OnlineMatch` on entering the room; online rematch, "Menú" and "Salir"; "El rival salió" and "Se perdió la sincronización" as new `SessionFailure`s. On leaving online it restores the two `LocalHumanPlayer`s.
+- **Net:** `NgoMatchTransport` registers the handler when the network starts (before the client finishes connecting) and raises `PeerConnected` with `OnClientConnectedCallback`.
 - **UI:**
-  - `BoardView`: sin input fuera de turno ni mientras hay una jugada pendiente.
-  - `GameHud`: "Tu turno" / "Turno del rival" cuando hay un solo humano en el dispositivo; en local sigue "Turno: Jugador X".
-  - `ResultScreen`: "Esperando al rival..." tras pedir revancha.
-- **Builder:** `MatchTransport` conectado al `NetworkManager` y a `MatchFlow`; línea `RematchStatus` en el panel de resultado. Idempotente: una instancia de cada objeto tras dos corridas.
-- **Tests nuevos:**
-  - `OnlineMatchTests` (dos `GameManager` sin escena, transporte en memoria con cola y bombeo explícito):
-    - partida completa con estados idénticos al final (celdas, colas, turno, jugadas, resultado y hash);
-    - cuatro propuestas ilegales del cliente (celda ocupada, símbolo del host, fuera de rango, fuera de turno) rechazadas sin cambiar ningún estado;
-    - `StartMatch` que llega antes de que el cliente esté listo, procesado desde el buffer (pedido de Cami);
-    - doble toque durante la espera manda una sola propuesta;
-    - revancha que necesita los dos pedidos y arranca O;
-    - hash distinto que corta en ambos lados.
-  - `OnlineMatchFlowTests` (escena real contra un dispositivo simulado):
-    - host completo por pantallas: HUD, input bloqueado en el turno del rival, victoria, revancha con espera, "El rival salió" y después "Jugar local" normal;
-    - cliente con arranque bufferizado y el host cerrando la sala;
-    - "Menú" desde el resultado;
-    - "Salir" en partida;
-    - desync por `Ack` con clave distinta.
+  - `BoardView`: no input out of turn or while a move is pending.
+  - `GameHud`: "Tu turno" / "Turno del rival" when there is a single human on the device; in local it stays "Turno: Jugador X".
+  - `ResultScreen`: "Esperando al rival..." after asking for a rematch.
+- **Builder:** `MatchTransport` connected to the `NetworkManager` and to `MatchFlow`; `RematchStatus` line in the result panel. Idempotent: one instance of each object after two runs.
+- **New tests:**
+  - `OnlineMatchTests` (two `GameManager`s with no scene, in-memory transport with a queue and explicit pumping):
+    - full match with identical states at the end (cells, queues, turn, moves, result and hash);
+    - four illegal client proposals (occupied cell, the host's symbol, out of range, out of turn) rejected without changing any state;
+    - a `StartMatch` that arrives before the client is ready, processed from the buffer (Cami's request);
+    - a double tap during the wait sends a single proposal;
+    - a rematch that needs both requests and starts with O;
+    - a different hash that cuts on both sides.
+  - `OnlineMatchFlowTests` (real scene against a simulated device):
+    - full host through the screens: HUD, input locked on the opponent's turn, win, rematch with waiting, "El rival salió" and then a normal "Jugar local";
+    - client with a buffered start and the host closing the room;
+    - "Menú" from the result;
+    - "Salir" mid-match;
+    - desync by an `Ack` with a different key.
 
-**Revisión humana:**
-- Cami aprobó el plan con ajustes:
-  - `IsLocal` pasa a `IsLocalHuman`: cuando exista la IA correrá en el dispositivo sin ser humana, y el HUD depende de si hay un humano controlando ese lado.
-  - `ReliableSequenced` explícito en código y documentado en el ADR.
-  - Test del `StartMatch` que llega antes de que el flujo del cliente esté listo.
-  - Anotar el pendiente del cliente bloqueado sin respuesta del host.
+**Human review:**
+- Cami approved the plan with adjustments:
+  - `IsLocal` becomes `IsLocalHuman`: when the AI exists it will run on the device without being human, and the HUD depends on whether a human controls that side.
+  - `ReliableSequenced` explicit in code and documented in the ADR.
+  - Test of the `StartMatch` that arrives before the client's flow is ready.
+  - Note the pending item of the client locked with no answer from the host.
 
-**Verificación:**
-- Compila sin errores.
-- EditMode 34/34 (33 + el test de `PositionKey.Value`).
-- PlayMode 45/45 vía MCP (34 + 6 de `OnlineMatchTests` + 5 de `OnlineMatchFlowTests`), incluido el modo local sin cambios.
-- Builder corrido 2 veces sin duplicados.
-- Los errores y warnings que quedan en consola después de la suite los generan los tests a propósito (rechazos, desync forzado, código `AB12CD`).
-- **Device real (Cami, APK en dos dispositivos):** crear sala, unirse por código, partida online completa, ganar, perder, revancha y el resto del flujo de resultado funcionan.
+**Verification:**
+- Compiles with no errors.
+- EditMode 34/34 (33 + the `PositionKey.Value` test).
+- PlayMode 45/45 via MCP (34 + 6 from `OnlineMatchTests` + 5 from `OnlineMatchFlowTests`), including local mode unchanged.
+- Builder run 2 times with no duplicates.
+- The errors and warnings left in the console after the suite are generated by the tests on purpose (rejections, forced desync, code `AB12CD`).
+- **Real device (Cami, APK on two devices):** creating a room, joining by code, full online match, winning, losing, rematch and the rest of the result flow work.
 
-**Pendientes para la iteración 3:**
-- **Cliente bloqueado sin respuesta del host:** si una propuesta del cliente nunca recibe `Confirmed` ni `Rejected` (host caído), `OnlineLocalPlayer` queda pendiente para siempre con el input bloqueado. Necesita timeout o recuperación junto con el manejo de desconexiones.
-- "Salir" y "Menú" durante una partida online cuentan como derrota (hoy solo cierran la sesión).
-- Timer de turno con modo ausente (GDD §3.5).
+**Pending for iteration 3:**
+- **Client locked with no answer from the host:** if a client proposal never receives `Confirmed` or `Rejected` (host down), `OnlineLocalPlayer` stays pending forever with the input locked. It needs a timeout or recovery together with the disconnection handling.
+- "Salir" and "Menú" during an online match count as a loss (today they only close the session).
+- Turn timer with absent mode (GDD §3.5).
 
-**Aprendizajes:**
-- Separar la autoridad (`OnlineMatch`) del transporte (`IMatchTransport`) permitió testear el modelo completo, incluidos desync y buffer, sin red ni escena. Un transporte en memoria que entrega recién en `Pump` reproduce la asincronía real; uno que entregara al instante habría escondido el caso del `StartMatch` que llega temprano.
+**Learnings:**
+- Separating the authority (`OnlineMatch`) from the transport (`IMatchTransport`) made it possible to test the full model, including desync and buffer, with no network or scene. An in-memory transport that delivers only on `Pump` reproduces the real asynchrony; one that delivered instantly would have hidden the case of the `StartMatch` that arrives early.
 
-**Commit(s):** — (sin commitear; Cami revisa y commitea).
+**Commit(s):** — (not committed; Cami reviews and commits).
 
 ---
 
-## [15] 2026-09-23 — Online iteración 3: timer de turno, modo ausente, desconexiones y abandono
+## [15] 2026-09-23 — Online iteration 3: turn timer, absent mode, disconnections and abandonment
 
-**Objetivo:** `docs/prompts/online-3-robustness.md`. Timer de turno autoritativo del host con jugada automática al vencer, modo ausente, abandono por 3 vencimientos y por "Salir", manejo de caída del host y del cliente, y el pendiente de la iteración 2 (propuesta sin respuesta).
+**Goal:** `docs/prompts/online-3-robustness.md`. Host-authoritative turn timer with an automatic move on expiry, absent mode, abandonment by 3 timeouts and by "Salir", handling of host and client drops, and the pending item from iteration 2 (proposal without answer).
 
-**Pedido / prompt:**
-- Cami confirma que 3 vencimientos consecutivos son derrota por abandono.
-- El host es dueño del timer (30 s / 10 s) y el cliente solo muestra la cuenta regresiva.
-- La jugada al azar vive en Game, con fuente inyectable.
-- "Salir" es derrota ("Ganaste: el rival abandonó" para el que queda). Si modelar el abandono requiere tocar el Core, parar y proponer antes.
-- Caída del cliente: la partida sigue. Caída del host: menú con "Se perdió la conexión con el rival".
-- HUD con tiempo y "ausente".
-- Tiempo inyectable en tests y cobertura de todos los casos con el transporte en memoria.
+**Request / prompt:**
+- Cami confirms that 3 consecutive timeouts are a loss by abandonment.
+- The host owns the timer (30 s / 10 s) and the client only shows the countdown.
+- The random move lives in Game, with an injectable source.
+- "Salir" is a loss ("Ganaste: el rival abandonó" for the one who stays). If modelling the abandonment requires touching the Core, stop and propose first.
+- Client drop: the match goes on. Host drop: menu with "Se perdió la conexión con el rival".
+- HUD with time and "absent".
+- Injectable time in tests and coverage of every case with the in-memory transport.
 
-**Qué hizo la IA:**
-- **Plan con decisiones a aprobar.** El primer mensaje del plan le llegó a Cami incompleto y mezclado con el cierre de la iteración 2, así que se reenviaron los puntos 1 a 7 completos.
-- **Core:** sin cambios. El abandono se modeló en Game (`MatchResult`, `GameManager.Halt()`), así que no hizo falta parar a proponer. La primera propuesta ponía los parámetros del timer en el `GameConfig` del Core siguiendo la regla 6 del CLAUDE.md tal como estaba escrita; Cami la corrigió (ver Revisión humana).
+**What the AI did:**
+- **Plan with decisions to approve.** The first message of the plan reached Cami incomplete and mixed with the closing of iteration 2, so points 1 to 7 were resent in full.
+- **Core:** no changes. Abandonment was modelled in Game (`MatchResult`, `GameManager.Halt()`), so there was no need to stop and propose. The first proposal put the timer parameters in the Core's `GameConfig` following CLAUDE.md rule 6 as it was written; Cami corrected it (see Human review).
 - **Game:**
-  - Nuevos: `OnlineTimerConfig` (expuesto por `GameConfigAsset.ToOnlineTimerConfig()`), `OnlineNetworkSettings`, `IClock` + `UnityClock`, `IRandomSource` + `SystemRandomSource`, `MatchResult` + `AbandonmentCause`.
+  - New: `OnlineTimerConfig` (exposed by `GameConfigAsset.ToOnlineTimerConfig()`), `OnlineNetworkSettings`, `IClock` + `UnityClock`, `IRandomSource` + `SystemRandomSource`, `MatchResult` + `AbandonmentCause`.
   - `OnlineMatch`:
-    - timer autoritativo con `Tick()`;
-    - `ChooseAutomaticMove`: al azar entre las legales que no ganan, simuladas con `RulesEngine.Apply`, sin tocar el Core; si todas ganan, cualquiera;
-    - modo ausente y cuenta de vencimientos consecutivos; el 3.º abandona sin jugar;
-    - "Salir" con `Forfeit`/`ForfeitAck` y espera acotada;
-    - `NotifyPeerGone`: gracia de 5 s en el host, conexión perdida en el cliente;
-    - timeout de propuesta en el cliente;
-    - descarte de envíos a un dispositivo ya caído.
+    - authoritative timer with `Tick()`;
+    - `ChooseAutomaticMove`: at random among the legal moves that don't win, simulated with `RulesEngine.Apply`, without touching the Core; if all of them win, any of them;
+    - absent mode and count of consecutive timeouts; the 3rd abandons without playing;
+    - "Salir" with `Forfeit`/`ForfeitAck` and a bounded wait;
+    - `NotifyPeerGone`: 5 s grace on the host, connection lost on the client;
+    - proposal timeout on the client;
+    - dropping sends to a device that is already down.
   - `MatchFlow`:
-    - tick por frame y `SetTimeSources` para tests;
-    - `LastResult` pasa a `MatchResult`;
-    - `ExitMatch` online con "Saliendo..." (ocupado) hasta el ack;
-    - distinción entre salida del rival en partida, en un resultado por abandono (la pantalla se queda) o en un resultado de tablero ("El rival salió");
+    - tick per frame and `SetTimeSources` for tests;
+    - `LastResult` becomes `MatchResult`;
+    - online `ExitMatch` with "Saliendo..." (busy) until the ack;
+    - distinction between the opponent leaving mid-match, on a result by abandonment (the screen stays) or on a board result ("El rival salió");
     - `SessionFailure.ConnectionLost`.
-- **Net:** `NgoMatchTransport` serializa los campos nuevos y expone `PeerDisconnected` desde `OnClientDisconnectCallback`.
+- **Net:** `NgoMatchTransport` serializes the new fields and exposes `PeerDisconnected` from `OnClientDisconnectCallback`.
 - **UI:**
-  - `GameHud`: cuenta regresiva "0:23" en otro color si el jugador del turno está ausente, " · ausente" junto al contador y "Saliendo...". Sin polling: reacciona a eventos del segundo mostrado y del timer.
-  - `ResultScreen`: "Ganaste: el rival abandonó" / "Perdiste: 3 turnos sin jugar", y revancha deshabilitada sin rival.
-- **Builder:** `TurnTimerLabel` en el HUD y `GameHud` conectado a `MatchFlow`; idempotente.
-- **CLAUDE.md:** regla 6 reescrita con la redacción de Cami, y el árbol de carpetas suma `Tests/PlayMode/`.
-- **Tests nuevos:**
-  - `OnlineRobustnessTests` (10, transporte en memoria y reloj manual):
-    - vencimiento con jugada automática igual en ambos lados;
-    - la jugada automática nunca elige la ganadora (probado con todos los valores del azar) y, si todas ganan, elige una;
-    - modo ausente con turnos de 10 s hasta la jugada propia;
-    - 3.er vencimiento: abandono sin jugada automática;
-    - "Salir" con ack y sin ack;
-    - caída del host;
-    - caída del cliente, con gracia de 5 s;
-    - propuesta sin respuesta.
-  - `OnlineTimerConfigTests` (2): valores de GDD §9.
-  - `OnlineMatchFlowTests`: nuevo test de cuenta regresiva y ausente en el HUD. Se adaptaron tres existentes:
-    - "Salir" ahora muestra "Saliendo..." y es derrota;
-    - la caída del cliente en la revancha termina en "Ganaste: el rival abandonó";
-    - la caída del host muestra "Se perdió la conexión".
+  - `GameHud`: countdown "0:23" in another color if the player to move is absent, " · ausente" next to the counter and "Saliendo...". No polling: it reacts to events of the shown second and of the timer.
+  - `ResultScreen`: "Ganaste: el rival abandonó" / "Perdiste: 3 turnos sin jugar", and rematch disabled without an opponent.
+- **Builder:** `TurnTimerLabel` in the HUD and `GameHud` connected to `MatchFlow`; idempotent.
+- **CLAUDE.md:** rule 6 rewritten with Cami's wording, and the folder tree adds `Tests/PlayMode/`.
+- **New tests:**
+  - `OnlineRobustnessTests` (10, in-memory transport and manual clock):
+    - timeout with the same automatic move on both sides;
+    - the automatic move never picks the winning one (tested with every value of the randomness) and, if all win, it picks one;
+    - absent mode with 10 s turns until the player's own move;
+    - 3rd timeout: abandonment with no automatic move;
+    - "Salir" with ack and without ack;
+    - host drop;
+    - client drop, with a 5 s grace;
+    - proposal without answer.
+  - `OnlineTimerConfigTests` (2): values from GDD §9.
+  - `OnlineMatchFlowTests`: new test of countdown and absent in the HUD. Three existing ones were adapted:
+    - "Salir" now shows "Saliendo..." and is a loss;
+    - the client drop on the rematch ends in "Ganaste: el rival abandonó";
+    - the host drop shows "Se perdió la conexión".
 
-**Revisión humana:**
-- Timer fuera del Core: el `RulesEngine` nunca lee esos parámetros, así que no van en `GameConfig`. Cami reescribió la regla 6 del CLAUDE.md, que era la que decía lo contrario, y pidió sumar `Tests/PlayMode/` al árbol.
-- Aprobado que el 3.er vencimiento no juegue al azar.
-- Regla nueva (GDD §3.5): la jugada automática nunca gana, salvo que todas las legales ganen, para que un ausente no gane sin jugar. Con test.
-- Aprobado el ack de hasta 2 s para "Salir", mostrando "Saliendo...".
-- Desconexión explícita del cliente: gracia corta de 5 s y abandono, sin esperar los 3 vencimientos (unos 50 s que no esperan a nadie, porque no hay reconexión). Los vencimientos quedan para el rival conectado que no juega.
+**Human review:**
+- Timer outside the Core: the `RulesEngine` never reads those parameters, so they don't go in `GameConfig`. Cami rewrote CLAUDE.md rule 6, which was the one saying the opposite, and asked to add `Tests/PlayMode/` to the tree.
+- Approved that the 3rd timeout doesn't play at random.
+- New rule (GDD §3.5): the automatic move never wins, unless every legal one wins, so an absent player doesn't win without playing. With a test.
+- Approved the ack of up to 2 s for "Salir", showing "Saliendo...".
+- Explicit client disconnection: a short 5 s grace and abandonment, without waiting for the 3 timeouts (about 50 s that wait for nobody, because there is no reconnection). The timeouts are left for the connected opponent who doesn't play.
 
-**Verificación:**
-- Compila sin errores.
-- EditMode 34/34. PlayMode 58/58 vía MCP (45 anteriores + 10 de robustez + 2 de config + 1 de HUD).
-- Builder corrido 2 veces sin duplicados.
-- Primera corrida de PlayMode: 55/56. El test del host terminaba con `LogAssert.NoUnexpectedReceived()` y ahora hay un warning intencional al vencer la gracia; se declaró como esperado (`LogAssert.Expect`). No era un bug de juego.
-- Los errores que quedan en consola después de la suite los generan los tests de desync y del código `AB12CD` a propósito.
-- **Pendiente (Cami), dos dispositivos, uno en wifi y otro con datos móviles:**
-  - dejar vencer un turno (jugada automática y "ausente");
-  - volver a jugar y salir del modo ausente;
-  - abandonar con "Salir" ("Saliendo..." en uno, "Ganaste: el rival abandonó" en el otro);
-  - cerrar la app del cliente a mitad de partida y ver al host ganar por abandono tras unos 5 s.
+**Verification:**
+- Compiles with no errors.
+- EditMode 34/34. PlayMode 58/58 via MCP (45 previous + 10 robustness + 2 config + 1 HUD).
+- Builder run 2 times with no duplicates.
+- First PlayMode run: 55/56. The host test ended with `LogAssert.NoUnexpectedReceived()` and now there is an intentional warning when the grace expires; it was declared as expected (`LogAssert.Expect`). It wasn't a game bug.
+- The errors left in the console after the suite are generated on purpose by the desync tests and the code `AB12CD` test.
+- **Pending (Cami), two devices, one on wifi and the other on mobile data:**
+  - let a turn expire (automatic move and "absent");
+  - play again and leave absent mode;
+  - abandon with "Salir" ("Saliendo..." on one, "Ganaste: el rival abandonó" on the other);
+  - close the client app mid-match and see the host win by abandonment after about 5 s.
 
-**Pendientes y límites conocidos:**
-- La cuenta regresiva del cliente no compensa latencia: puede mostrar unos milisegundos de más. Solo el host decide.
-- Carrera aceptada: si el timer del host vence mientras viaja una propuesta del cliente, gana el timer y la propuesta llega fuera de turno, así que se rechaza.
-- Sin reconexión en el MVP.
+**Pending items and known limits:**
+- The client's countdown doesn't compensate for latency: it can show a few milliseconds too many. Only the host decides.
+- Accepted race: if the host's timer expires while a client proposal is in flight, the timer wins and the proposal arrives out of turn, so it is rejected.
+- No reconnection in the MVP.
 
-**Aprendizajes:**
-- Una regla del CLAUDE.md puede estar mal escrita: la regla 6 empujaba a poner en el Core parámetros que el Core no usa. Seguirla al pie de la letra llevó a la primera propuesta; Cami corrigió la regla, no solo el plan.
-- Separar "desconectado" de "conectado pero no juega" cambia bastante la experiencia (5 s contra unos 50 s de espera) y no se ve si se modela todo como vencimientos.
+**Learnings:**
+- A CLAUDE.md rule can be badly written: rule 6 pushed toward putting in the Core parameters the Core doesn't use. Following it to the letter led to the first proposal; Cami corrected the rule, not only the plan.
+- Separating "disconnected" from "connected but not playing" changes the experience quite a bit (5 s against about 50 s of waiting) and it isn't visible if everything is modelled as timeouts.
 
-**Bug en investigación (reportado por Cami tras probar la iteración 2 en dos celulares):**
-- **Síntoma:** en la primera sala que se crea, el cliente se queda en la sala de espera mientras al host le arranca la partida. Pasó dos veces, con los dos celulares en wifi.
-- **Otro error, aparte:** en una prueba celular (iteración 2) contra editor (iteración 3), el editor tiró `OverflowException: Reading past the end of the buffer` en `NgoMatchTransport.OnNamedMessage`. Es compatible con la diferencia de tamaño del mensaje entre versiones (19 contra 25 bytes), sin probar; no se pudo atar a la línea exacta.
-- **Lo confirmado en el código de NGO 2.13.3:**
-  - un mensaje con nombre que llega sin handler registrado se descarta en silencio;
-  - el cliente registra su handler dentro de `StartClient()`, antes de conectar;
-  - con scene management activo, el host recibe "cliente conectado" recién después de que el cliente sincronizó escenas;
-  - la escena activa no se recarga al sincronizar.
-  - Con eso, la carrera obvia no debería ocurrir: **causa no determinada**.
-- **Hipótesis abiertas:**
-  - se pierde el único `StartMatch` que manda el host, sin reintento;
-  - el primer join en frío supera el timeout de 15 s.
-- **Paso 1 (hecho):** logs de diagnóstico sin cambio de comportamiento. `NetDiagnostics.Log` con prefijo `Tic-Tac-Fade [net t=…]`, en:
-  - handler registrado, conectado y desconectado;
-  - enviado y recibido, este último con si se entregó o quedó en el buffer;
-  - apertura y cierre del transporte;
-  - `StartMatch` enviado y procesado, y el paso del flujo a Playing;
-  - duración de crear y unirse.
-- La suite de PlayMode los apaga, con un `SetUpFixture`: `LogAssert.NoUnexpectedReceived()` también cuenta los `Log` normales, y cinco tests fallaron hasta que se apagaron.
-- Verificado en el editor contra el servicio real: crear sala → cerrar → crear otra vez deja la secuencia completa en el log. PlayMode 58/58.
-- **Paso 2 (hecho, Cami):** APK con el mismo código en dos celulares. **El bug no se reprodujo.**
-- **Paso 3 (hecho, ver [16]):** arreglo estructural sin causa confirmada: handshake `Ready` con reenvío, número de partida en `StartMatch`, versión de protocolo y lectura tolerante.
+**Bug under investigation (reported by Cami after testing iteration 2 on two phones):**
+- **Symptom:** in the first room created, the client stays in the waiting room while the match starts on the host. It happened twice, with both phones on wifi.
+- **Another error, separate:** in a test of a phone (iteration 2) against the editor (iteration 3), the editor threw `OverflowException: Reading past the end of the buffer` in `NgoMatchTransport.OnNamedMessage`. It is consistent with the message size difference between versions (19 against 25 bytes), untested; it couldn't be tied to the exact line.
+- **What was confirmed in the NGO 2.13.3 code:**
+  - a named message that arrives with no handler registered is silently discarded;
+  - the client registers its handler inside `StartClient()`, before connecting;
+  - with scene management active, the host gets "client connected" only after the client synchronized scenes;
+  - the active scene isn't reloaded when synchronizing.
+  - With that, the obvious race shouldn't happen: **cause undetermined**.
+- **Open hypotheses:**
+  - the single `StartMatch` the host sends is lost, with no retry;
+  - the first cold join exceeds the 15 s timeout.
+- **Step 1 (done):** diagnostic logs with no behavior change. `NetDiagnostics.Log` with the prefix `Tic-Tac-Fade [net t=…]`, in:
+  - handler registered, connected and disconnected;
+  - sent and received, the latter with whether it was delivered or stayed in the buffer;
+  - opening and closing of the transport;
+  - `StartMatch` sent and processed, and the flow's switch to Playing;
+  - duration of create and join.
+- The PlayMode suite turns them off, with a `SetUpFixture`: `LogAssert.NoUnexpectedReceived()` also counts normal `Log`s, and five tests failed until they were turned off.
+- Verified in the editor against the real service: create room → close → create again leaves the full sequence in the log. PlayMode 58/58.
+- **Step 2 (done, Cami):** APK with the same code on two phones. **The bug didn't reproduce.**
+- **Step 3 (done, see [16]):** structural fix with no confirmed cause: `Ready` handshake with resend, match number in `StartMatch`, protocol version and tolerant reading.
 
-**Commit(s):** — (sin commitear; Cami revisa y commitea).
+**Commit(s):** — (not committed; Cami reviews and commits).
 
 ---
 
-## [16] 2026-10-06 — Arranque online: handshake Ready, número de partida y versión de protocolo
+## [16] 2026-10-06 — Online start: Ready handshake, match number and protocol version
 
-**Objetivo:** cerrar el "Bug en investigación" de [15] (el cliente se queda en la sala de espera mientras al host le arranca la partida) con un arreglo que elimine la clase entera de bug.
-- **El bug no se reprodujo:** después de las dos veces iniciales, Cami no lo pudo volver a provocar en dos celulares.
-- **La causa no está confirmada:** se decidió no seguir investigándola y aplicar un arreglo estructural.
-- Si vuelve a aparecer un síntoma parecido, los logs de diagnóstico de [15] siguen en el código, apagados por defecto.
+**Goal:** close the "Bug under investigation" of [15] (the client stays in the waiting room while the match starts on the host) with a fix that eliminates the whole class of bug.
+- **The bug didn't reproduce:** after the two initial times, Cami couldn't provoke it again on two phones.
+- **The cause is not confirmed:** it was decided not to keep investigating it and to apply a structural fix.
+- If a similar symptom shows up again, the diagnostic logs from [15] are still in the code, off by default.
 
-**Pedido / prompt:** paso 3 de [15], con plan aprobado y tres rondas de ajustes de Cami.
-- Handshake `Ready`: el cliente lo reenvía hasta recibir `StartMatch`, y el host arranca con el `Ready`, no con la conexión de Netcode. Un `Ready` duplicado no arranca dos partidas.
-- Versión de protocolo en el primer mensaje, con "El rival tiene otra versión del juego" en ambos lados.
-- Lectura tolerante: un mensaje de tamaño inesperado se descarta con un warning, nunca con una excepción.
-- Tests con el transporte en memoria. Los logs de diagnóstico quedan como están.
+**Request / prompt:** step 3 of [15], with an approved plan and three rounds of adjustments by Cami.
+- `Ready` handshake: the client resends it until it gets `StartMatch`, and the host starts with the `Ready`, not with the Netcode connection. A duplicated `Ready` doesn't start two matches.
+- Protocol version in the first message, with "El rival tiene otra versión del juego" on both sides.
+- Tolerant reading: a message of unexpected size is discarded with a warning, never with an exception.
+- Tests with the in-memory transport. The diagnostic logs stay as they are.
 
-**Qué hizo la IA:**
+**What the AI did:**
 - **Game:**
-  - **Nuevo `MatchMessageCodec`**, el formato de trama compartido por los dos transportes:
-    - cabecera fija `kind`+versión, 31 bytes en total;
-    - `TryDecode` nunca lanza;
-    - una trama de otra versión se decodifica solo por la cabecera, y el resto de lo inválido se descarta con un warning.
-  - **`MatchMessage`:** kinds `Ready` (12) y `VersionMismatch` (13), y campos `MatchNumber` y `ProtocolVersion`.
+  - **New `MatchMessageCodec`**, the frame format shared by both transports:
+    - fixed `kind`+version header, 31 bytes in total;
+    - `TryDecode` never throws;
+    - a frame of another version is decoded only by the header, and the rest of what is invalid is discarded with a warning.
+  - **`MatchMessage`:** kinds `Ready` (12) and `VersionMismatch` (13), and fields `MatchNumber` and `ProtocolVersion`.
   - **`OnlineMatch`:**
-    - reenvío de `Ready` en `Tick` y arranque del host con el primer `Ready`;
-    - `ResendCurrentStart` ante un `Ready` posterior, con el `TurnTimer` del tiempo restante del host;
-    - el cliente solo acepta el `MatchNumber` que espera;
-    - salida por versión distinta, en la que el host espera la respuesta del cliente hasta 2 s.
-  - **`MatchFlow`:** `readyResendIntervalSeconds` (1 s) y `SessionFailure.VersionMismatch`, que lleva al menú.
-  - Se quitaron `IMatchTransport.PeerConnected` e `IsPeerConnected`.
-- **Net:** `NgoMatchTransport` serializa con el codec y lee exactamente los bytes que llegaron, sin leer más allá del final. Un `Ready` sin conexión se descarta en silencio, solo con `NetDiagnostics.Log`.
-- **UI:** texto "El rival tiene otra versión del juego.".
+    - resend of `Ready` in `Tick` and the host's start with the first `Ready`;
+    - `ResendCurrentStart` on a later `Ready`, with the `TurnTimer` of the host's remaining time;
+    - the client only accepts the `MatchNumber` it expects;
+    - exit on a different version, in which the host waits for the client's answer up to 2 s.
+  - **`MatchFlow`:** `readyResendIntervalSeconds` (1 s) and `SessionFailure.VersionMismatch`, which leads to the menu.
+  - `IMatchTransport.PeerConnected` and `IsPeerConnected` were removed.
+- **Net:** `NgoMatchTransport` serializes with the codec and reads exactly the bytes that arrived, without reading past the end. A `Ready` without connection is silently discarded, only with `NetDiagnostics.Log`.
+- **UI:** text "El rival tiene otra versión del juego.".
 - **Tests:**
-  - El transporte en memoria ahora pasa todo por el codec (los mismos bytes que la red) y suma `LoseNextSent`, `SetLinkUp`, `InjectToPeer` y `DeliverRawToPeer`.
-  - **Nuevo `OnlineHandshakeTests` (10):**
-    - `Ready` perdido que se recupera por reenvío;
-    - `Ready` duplicado que no arranca otra partida;
-    - `StartMatch` perdido que se recupera, con la cuenta del cliente igual al tiempo restante del host;
-    - `Ready` duplicado en una revancha que empieza O: el cliente ve 20 s y el host vence el turno cuando la cuenta llega a 0;
-    - `StartMatch` viejo después de una revancha, ignorado;
-    - `Ready` sin conexión como no-op silencioso (sin logs) que se recupera al conectar;
-    - versión distinta en ambos lados;
-    - versión distinta sin respuesta: el host se va a los 2 s;
-    - mensaje truncado descartado sin excepción;
-    - codec: vacío, null, `kind` desconocido e ida y vuelta de todos los campos.
-  - **`OnlineMatchFlowTests`:** test nuevo de versión distinta en la escena (menú con el texto). Se adaptaron los setups (sin `ConnectPeer`, con `Pump` después del join del cliente).
-  - El test del `StartMatch` en el buffer se reemplazó por "el `Ready` llega antes de que el host escuche".
+  - The in-memory transport now passes everything through the codec (the same bytes as the network) and adds `LoseNextSent`, `SetLinkUp`, `InjectToPeer` and `DeliverRawToPeer`.
+  - **New `OnlineHandshakeTests` (10):**
+    - a lost `Ready` that is recovered by resending;
+    - a duplicated `Ready` that doesn't start another match;
+    - a lost `StartMatch` that is recovered, with the client's countdown equal to the host's remaining time;
+    - a duplicated `Ready` in a rematch that O starts: the client sees 20 s and the host expires the turn when the countdown reaches 0;
+    - an old `StartMatch` after a rematch, ignored;
+    - a `Ready` without connection as a silent no-op (no logs) that recovers on connecting;
+    - different version on both sides;
+    - different version with no answer: the host leaves after 2 s;
+    - a truncated message discarded with no exception;
+    - codec: empty, null, unknown `kind` and round trip of every field.
+  - **`OnlineMatchFlowTests`:** new test of a different version in the scene (menu with the text). The setups were adapted (no `ConnectPeer`, with `Pump` after the client's join).
+  - The test of the `StartMatch` in the buffer was replaced by "the `Ready` arrives before the host listens".
 - **Docs:**
-  - ADR 0002 con sección nueva;
-  - GDD §5 con la línea de versión distinta;
-  - GDD v0.8: fila en el historial y encabezado "MVP implementado — en verificación en dispositivos", a pedido de Cami.
+  - ADR 0002 with a new section;
+  - GDD §5 with the different-version line;
+  - GDD v0.8: row in the history and the header "MVP implementado — en verificación en dispositivos" [MVP implemented — under verification on devices], at Cami's request.
 
-**Revisión humana:**
-- Aprobado responder siempre al `Ready` reenviando el `StartMatch` actual, para que un `StartMatch` perdido no deje al cliente reenviando para siempre.
-- **Ajuste 1:** en vez de un chequeo de "partida en curso", un número de partida en `StartMatch`. El cliente acepta solo el que espera, así que el `Ready` duplicado y la revancha se resuelven con la misma regla. Test de `StartMatch` viejo tras una revancha.
-- **Ajuste 2:** el `Ready` antes de que Netcode conecte debe ser un no-op silencioso, no un warning por segundo. Se verificó en NGO que `SendNamedMessage` no chequea la conexión, así que el guard va en el transporte.
-- **Ajuste 3:** el `TurnTimer` reenviado lleva el tiempo restante, no la duración completa (el caso de la revancha que empieza O). `MatchNumber` pasa a ser un campo propio en vez de reusar `MoveNumber`: con la versión 1 rompiendo compatibilidad, cambiar el formato era gratis.
+**Human review:**
+- Approved always answering the `Ready` by resending the current `StartMatch`, so a lost `StartMatch` doesn't leave the client resending forever.
+- **Adjustment 1:** instead of a "match in progress" check, a match number in `StartMatch`. The client accepts only the one it expects, so the duplicated `Ready` and the rematch are solved with the same rule. Test of an old `StartMatch` after a rematch.
+- **Adjustment 2:** the `Ready` before Netcode connects must be a silent no-op, not a warning per second. It was verified in NGO that `SendNamedMessage` doesn't check the connection, so the guard goes in the transport.
+- **Adjustment 3:** the resent `TurnTimer` carries the remaining time, not the full duration (the case of the rematch that O starts). `MatchNumber` becomes a field of its own instead of reusing `MoveNumber`: with version 1 breaking compatibility, changing the format was free.
 
-**Verificación:**
-- Compila sin errores. Los únicos warnings son CS0618 en `SceneWiringAndInputTests`, que ya estaban.
-- EditMode 34/34. PlayMode 69/69 vía MCP (58 anteriores, 10 de handshake y 1 de flujo).
-- En consola quedan solo los errores intencionales de los tests de desync y del código `AB12CD`.
-- **En dispositivos (Cami, 2026-10-07, dos celulares):** varias pruebas de creación de sala y arranque de partida.
-  - El bug del cliente que se quedaba en la sala de espera **no se reprodujo tras el arreglo estructural**.
-  - Esto no confirma la causa: tampoco se había reproducido en las pruebas de [15] antes del arreglo.
-- **No probado:** el APK con `ProtocolVersion` cambiado contra uno normal, para ver el mensaje de versión distinta en los dos lados. Esta verificación era opcional; el caso queda cubierto por los tests.
+**Verification:**
+- Compiles with no errors. The only warnings are CS0618 in `SceneWiringAndInputTests`, which were already there.
+- EditMode 34/34. PlayMode 69/69 via MCP (58 previous, 10 handshake and 1 flow).
+- Only the intentional errors of the desync tests and the code `AB12CD` test are left in the console.
+- **On devices (Cami, 2026-10-07, two phones):** several tests of room creation and match start.
+  - The bug of the client that stayed in the waiting room **didn't reproduce after the structural fix**.
+  - This doesn't confirm the cause: it hadn't reproduced either in the tests of [15] before the fix.
+- **Not tested:** the APK with `ProtocolVersion` changed against a normal one, to see the different-version message on both sides. This verification was optional; the case is covered by the tests.
 
-**Pendientes y límites conocidos:**
-- **Incompatible con los APKs anteriores:** un host nuevo con un cliente viejo se queda en la sala de espera, porque no le llega ningún `Ready`.
-- El host no tiene timeout si el `Ready` no llega nunca. El usuario puede cancelar desde la sala.
-- **Si el host jugara antes de que el cliente recupere un `StartMatch` perdido**, el cliente recibiría un `Confirmed` sin partida y se detectaría como desync, no en silencio. Con entrega confiable y ordenada no debería pasar.
-- **El guard de `Ready` sin conexión en `NgoMatchTransport` no tiene test automático**, porque necesita red. El test cubre el comportamiento equivalente del transporte en memoria.
+**Pending items and known limits:**
+- **Incompatible with the previous APKs:** a new host with an old client stays in the waiting room, because no `Ready` reaches it.
+- The host has no timeout if the `Ready` never arrives. The user can cancel from the room.
+- **If the host played before the client recovers a lost `StartMatch`**, the client would receive a `Confirmed` with no match and it would be detected as a desync, not silently. With reliable, ordered delivery it shouldn't happen.
+- **The guard for `Ready` without connection in `NgoMatchTransport` has no automated test**, because it needs a network. The test covers the equivalent behavior of the in-memory transport.
 
-**Aprendizajes:**
-- Cuando un bug de red no se reproduce, un protocolo que se recupera solo (reenvío idempotente con números de secuencia) es más barato que seguir buscando una carrera que quizá no vuelva a pasar.
-- Un número monótono en el mensaje resuelve con una sola regla casos que con flags necesitaban razonar sobre el momento en que se limpian.
-- Reenviar un estado con tiempo (el timer) obliga a mandar lo que queda, no lo que había al principio. Lo detectó la revisión humana, no el plan.
+**Learnings:**
+- When a network bug doesn't reproduce, a protocol that recovers by itself (idempotent resend with sequence numbers) is cheaper than continuing to look for a race that may not happen again.
+- A monotonic number in the message solves with a single rule cases that with flags needed reasoning about the moment they are cleared.
+- Resending a state with time (the timer) forces sending what is left, not what there was at the beginning. The human review detected it, not the plan.
 
-**Commit(s):** — (sin commitear; Cami revisa y commitea).
-
----
-
-## [17] 2026-10-07 — GDD v0.9: "Opciones de sala" en el roadmap
-
-**Objetivo:** documentar en el roadmap (GDD §8) las opciones de sala posteriores al MVP. Solo documentación, sin código.
-
-**Pedido / prompt:** diseño dado por Cami.
-- Ubicación: ítem nuevo después del modo vs IA.
-- Opciones independientes: indicadores sí/no, tiempo de turno 10/20/30 s y tope de jugadas según el solver.
-- "Normal" y "Difícil" son presets, no modos con reglas propias.
-- Sin indicadores se oculta toda la información de qué ficha se va, lo que concreta el "modo memoria" de §4.1.
-- El host elige y la configuración viaja al cliente. El tope de jugadas es regla del Core y tiene que ser idéntico en ambos lados.
-
-**Qué hizo la IA:**
-- GDD §8: ítem 3 "Opciones de sala" con el diseño tal como lo pidió Cami. Los ítems siguientes se renumeraron de 4 a 7.
-- Fila 0.9 en el historial y encabezado en versión 0.9. El estado sigue en "MVP v0.1.0", porque la versión del GDD es independiente de la del juego.
-
-**Revisión humana:** pendiente.
-
-**Verificación:** no aplica (sin código).
-
-**Preguntas abiertas para cuando se planifique** (no se resolvieron en el GDD):
-- **Tiempo de turno vs. turno en modo ausente.** Con turno de 10 s, el turno de 10 s del modo ausente (§3.5, §9) deja de ser más corto. Falta decidir si el tiempo de ausente escala con la opción o queda fijo.
-- **Alcance de las opciones.** El timer hoy es solo online (§3.5). Falta definir si las opciones de sala aplican también al modo local y al modo vs IA, o solo a salas online.
-- **Versión de protocolo.** Mandar la configuración al cliente cambia el protocolo, así que sube `ProtocolVersion` (ADR 0002).
-
-**Commit(s):** — (sin commitear; Cami revisa y commitea).
+**Commit(s):** — (not committed; Cami reviews and commits).
 
 ---
 
-## [18] 2026-10-07 — Solver por análisis retrógrado (GDD §8.1)
+## [17] 2026-10-07 — GDD v0.9: "Room options" in the roadmap
 
-**Objetivo:** resolver el juego completo en 3x3 con buffer 3 y responder con datos. ¿La posición inicial es victoria forzada para quien empieza, para el segundo, o para ninguno? Si hay victoria forzada, ¿en cuántas jugadas? Solo el solver y sus respuestas: sin IA ni UI.
+**Goal:** document in the roadmap (GDD §8) the room options after the MVP. Documentation only, no code.
 
-**Pedido / prompt:** el pedido de Cami, con plan aprobado.
-- Assembly nuevo `TicTacFade.Solver` (C# puro), sin modificar el Core.
-- Identidad por `PositionKey`.
-- Test de equivalencia con `RulesEngine` en todas las posiciones alcanzables.
-- Chequeo del tope de 40.
-- Medición de tamaño, tiempo y memoria, y criterio entre calcular al arrancar o guardar un asset.
-- Rechazo de configuraciones grandes.
+**Request / prompt:** design given by Cami.
+- Location: new item after the vs-AI mode.
+- Independent options: indicators yes/no, turn time 10/20/30 s and move cap according to the solver.
+- "Normal" and "Difícil" (Hard) are presets, not modes with their own rules.
+- Without indicators all the information about which piece goes is hidden, which makes the "memory mode" of §4.1 concrete.
+- The host picks and the configuration travels to the client. The move cap is a Core rule and has to be identical on both sides.
 
-Respuestas de Cami al plan: distancias en plies, medición en el editor por ahora y umbral de 5 millones de posiciones. Agregados de Cami:
-- informar cada primera jugada y la distribución de resultados;
-- considerar WebGL (sin hilos) en el criterio runtime vs. asset, sin cálculo durante una partida;
-- anotar para la IA que la victoria forzada asume que el camino no repite posiciones ya vistas en la partida.
+**What the AI did:**
+- GDD §8: item 3 "Room options" with the design as Cami asked for it. The following items were renumbered from 4 to 7.
+- Row 0.9 in the history and header at version 0.9. The status stays "MVP v0.1.0", because the GDD version is independent of the game's.
 
-**Qué hizo la IA:**
-- **`Scripts/Solver/`** (`TicTacFade.Solver.asmdef`, `noEngineReferences: true`, depende solo del Core):
-  - `GameSolver`: validación con cota del espacio de estados, exploración hacia adelante y retrógrado con cola por distancia.
-  - `SolverPosition`: generación de jugadas espejo de `RulesEngine`.
-  - `SolverTable`: búsqueda por `PositionKey` o `GameState`, y `GetMoveResults` con el valor de cada jugada.
-  - `SolverStats`, `PositionResult`, `PositionOutcome`, `MoveResult` y `SolverMoveEdge`.
-- **El Core no cambió.** No hizo falta exponer nada: la API pública alcanzó.
-- **`Scripts/Editor/SolverReport.cs`:** menú `Tic-Tac-Fade/Solver/Solve MVP and report`.
-- **Tests EditMode (`SolverTests`, 7):**
-  - equivalencia con `RulesEngine.IsLegal` y `Apply` en todas las posiciones alcanzables (legalidad por casilla, victoria inmediata, posición resultante y cantidad total);
-  - consistencia del retrógrado: el valor de cada posición es el mejor de sus jugadas;
-  - victoria en 1;
-  - derrota inevitable en 2, verificada además a mano con el Core: la casilla que bloquea está ocupada por la ficha más vieja del que defiende;
-  - posición inicial estable: `Win in 13` en dos corridas y también empezando O, con bordes que ganan y esquinas y centro sin victoria forzada;
-  - líneas forzadas dentro del tope;
-  - rechazo de 4x4 con buffer 4.
+**Human review:** pending.
+
+**Verification:** not applicable (no code).
+
+**Open questions for when it gets planned** (not resolved in the GDD):
+- **Turn time vs. turn in absent mode.** With a 10 s turn, absent mode's 10 s turn (§3.5, §9) stops being shorter. It still has to be decided whether the absent time scales with the option or stays fixed.
+- **Scope of the options.** The timer is online only today (§3.5). It still has to be defined whether the room options also apply to local mode and the vs-AI mode, or only to online rooms.
+- **Protocol version.** Sending the configuration to the client changes the protocol, so it bumps `ProtocolVersion` (ADR 0002).
+
+**Commit(s):** — (not committed; Cami reviews and commits).
+
+---
+
+## [18] 2026-10-07 — Solver by retrograde analysis (GDD §8.1)
+
+**Goal:** solve the full 3x3 game with buffer 3 and answer with data. Is the initial position a forced win for whoever starts, for the second player, or for neither? If there is a forced win, in how many moves? Only the solver and its answers: no AI or UI.
+
+**Request / prompt:** Cami's request, with an approved plan.
+- New assembly `TicTacFade.Solver` (pure C#), without modifying the Core.
+- Identity by `PositionKey`.
+- Equivalence test with `RulesEngine` on every reachable position.
+- Check of the cap of 40.
+- Measurement of size, time and memory, and a criterion between computing at startup or storing an asset.
+- Rejection of large configurations.
+
+Cami's answers to the plan: distances in plies, measurement in the editor for now and a threshold of 5 million positions. Cami's additions:
+- report each first move and the distribution of results;
+- consider WebGL (no threads) in the runtime vs. asset criterion, with no computation during a match;
+- note for the AI that the forced win assumes the path doesn't repeat positions already seen in the match.
+
+**What the AI did:**
+- **`Scripts/Solver/`** (`TicTacFade.Solver.asmdef`, `noEngineReferences: true`, depends only on the Core):
+  - `GameSolver`: validation with a bound on the state space, forward exploration and retrograde with a queue by distance.
+  - `SolverPosition`: move generation mirroring `RulesEngine`.
+  - `SolverTable`: lookup by `PositionKey` or `GameState`, and `GetMoveResults` with the value of each move.
+  - `SolverStats`, `PositionResult`, `PositionOutcome`, `MoveResult` and `SolverMoveEdge`.
+- **The Core didn't change.** Nothing needed exposing: the public API was enough.
+- **`Scripts/Editor/SolverReport.cs`:** menu `Tic-Tac-Fade/Solver/Solve MVP and report`.
+- **EditMode tests (`SolverTests`, 7):**
+  - equivalence with `RulesEngine.IsLegal` and `Apply` on every reachable position (legality per cell, immediate win, resulting position and total count);
+  - consistency of the retrograde pass: each position's value is the best of its moves;
+  - win in 1;
+  - unavoidable loss in 2, also verified by hand with the Core: the blocking cell is occupied by the defender's oldest piece;
+  - stable initial position: `Win in 13` in two runs and also with O starting, with edges that win and corners and center with no forced win;
+  - forced lines within the cap;
+  - rejection of 4x4 with buffer 4.
 - **Docs:**
-  - `docs/solver-results.md` (nuevo);
-  - ADR 0004 (assembly, criterio de `NoForcedWin`, notas para la IA, criterio runtime vs. asset);
-  - respuesta en GDD §8.1.
+  - `docs/solver-results.md` (new);
+  - ADR 0004 (assembly, `NoForcedWin` criterion, notes for the AI, runtime vs. asset criterion);
+  - answer in GDD §8.1.
 
-**Hallazgos:**
-- **Quien empieza tiene victoria forzada en 13 jugadas** (plies). Exige abrir en un borde (1, 3, 5 o 7); abriendo en una esquina o en el centro, ninguno puede forzarla.
-- **116.074 posiciones alcanzables** (la cota era 204.086) y 369.801 jugadas.
-- **Distribución:** Win 67,7 %, Loss 20,9 % y NoForcedWin 11,4 %.
-- **Líneas más largas:** la victoria forzada más larga mide 17 y la derrota más larga 16.
-- **Tope de 40:** no corta ninguna línea forzada desde el inicio.
-- **Rendimiento:** unos 0,5 s en el editor y unos 30 MB retenidos por la tabla completa.
-- **Inclinación para la IA:** un asset precalculado compacto (alrededor de 1 MB) para WebGL y móvil. La decisión final se toma en la iteración de la IA.
+**Findings:**
+- **Whoever starts has a forced win in 13 moves** (plies). It requires opening on an edge (1, 3, 5 or 7); opening on a corner or the center, neither side can force it.
+- **116,074 reachable positions** (the bound was 204,086) and 369,801 moves.
+- **Distribution:** Win 67.7 %, Loss 20.9 % and NoForcedWin 11.4 %.
+- **Longest lines:** the longest forced win is 17 and the longest loss 16.
+- **Cap of 40:** it doesn't cut any forced line from the start.
+- **Performance:** about 0.5 s in the editor and about 30 MB retained by the full table.
+- **Leaning for the AI:** a compact precalculated asset (around 1 MB) for WebGL and mobile. The final decision is made in the AI iteration.
 
-**Revisión humana:** plan aprobado con los tres agregados de arriba. El resultado todavía no fue revisado.
+**Human review:** plan approved with the three additions above. The result hasn't been reviewed yet.
 
-**Verificación:**
-- Compila sin errores.
-- EditMode 41/41 vía MCP (34 anteriores + 7 del solver). La suite tarda unos 23 s; casi todo es el test de equivalencia.
-- **PlayMode vía MCP: no corrió.** "Test job failed to initialize", 0 tests, dos veces, también después de forzar la recompilación. Según CLAUDE.md, no cuenta como pasada.
-- **PlayMode desde el Test Runner (Cami): 69/69.**
-  - La consola dejó 5 errores y 20 warnings, revisados uno por uno. Todos los provocan los tests a propósito:
-    - errores: el código `AB12CD` y cuatro "out of sync" de los dos tests de desync;
-    - warnings: mensajes malformados, versión distinta, propuestas ilegales, gracia de desconexión, "Salir" sin ack y propuesta sin respuesta.
-  - No hay errores de compilación ni logs inesperados.
-- El informe del Editor se obtuvo ejecutando el menú vía `execute_code`, porque `read_console` no devolvió el `Debug.Log`.
+**Verification:**
+- Compiles with no errors.
+- EditMode 41/41 via MCP (34 previous + 7 from the solver). The suite takes about 23 s; almost all of it is the equivalence test.
+- **PlayMode via MCP: it didn't run.** "Test job failed to initialize", 0 tests, twice, also after forcing the recompilation. Per CLAUDE.md, it doesn't count as passed.
+- **PlayMode from the Test Runner (Cami): 69/69.**
+  - The console left 5 errors and 20 warnings, reviewed one by one. All of them are provoked by the tests on purpose:
+    - errors: the code `AB12CD` and four "out of sync" from the two desync tests;
+    - warnings: malformed messages, different version, illegal proposals, disconnection grace, "Salir" without ack and proposal without answer.
+  - There are no compilation errors or unexpected logs.
+- The Editor report was obtained by running the menu via `execute_code`, because `read_console` didn't return the `Debug.Log`.
 
-**Pendientes y límites conocidos:**
-- ~~**El resultado depende de que la generación de jugadas del solver sea correcta.** La cubren el test de equivalencia con el Core y el de consistencia del retrógrado. No hay una verificación independiente por búsqueda hacia adelante.~~ Resuelto: ver "Verificación independiente" más abajo.
-- **Medición solo en el editor.** Falta medir en Android y, cuando exista, en WebGL.
-- **El juego está resuelto a favor de quien empieza.** Para el balance y las dificultades de la IA, a decidir.
-- **Valores del tope para "Opciones de sala":** elegirlos con datos requiere otra corrida con el tope como parte del estado.
+**Pending items and known limits:**
+- ~~**The result depends on the solver's move generation being correct.** It is covered by the equivalence test with the Core and the retrograde consistency one. There is no independent verification by forward search.~~ Solved: see "Independent verification" below.
+- **Measurement only in the editor.** Measuring on Android and, when it exists, on WebGL is still missing.
+- **The game is solved in favor of whoever starts.** For balance and the AI difficulties, to be decided.
+- **Cap values for "Room options":** choosing them with data requires another run with the cap as part of the state.
 
-**Verificación independiente (agregada antes del commit, a pedido de Cami):**
-- **`tools/verify_solver.py`:** un solver en Python escrito a partir de las reglas del GDD. Lo escribió Claude en la conversación de planificación del proyecto (no el agente de Claude Code), sin acceso al código en C#. Cami lo sumó al repo. No tiene dependencias.
-- La IA lo leyó completo antes de sumarlo y lo corrió (`python3 -I tools/verify_solver.py`, ~1,5 s de exploración).
-- **Reproduce exactamente todos los números:**
-  - 116.074 posiciones y 369.801 jugadas;
-  - `Win in 13` en la posición inicial;
-  - las 9 aperturas (bordes `Win in 13`, esquinas y centro `NoForcedWin`);
-  - Win 78.613, Loss 24.268, NoForcedWin 13.193;
-  - distancias máximas 17 y 16, y el histograma completo de distancias.
-- **No cubre** la simetría cuando empieza O (no explora esa posición); la verifica el test en C#.
-- Además, reconstruye una línea forzada de 13 jugadas sin posiciones repetidas: X1 O8 X4 O7 X6 O2 X0 O3 X8 O4 X5 O7 X2.
-- Queda mencionado en `docs/solver-results.md` y en la fila 0.10 del GDD.
+**Independent verification (added before the commit, at Cami's request):**
+- **`tools/verify_solver.py`:** a solver in Python written from the GDD rules. It was written by Claude in the project's planning conversation (not the Claude Code agent), with no access to the C# code. Cami added it to the repo. It has no dependencies.
+- The AI read it in full before adding it and ran it (`python3 -I tools/verify_solver.py`, ~1.5 s of exploration).
+- **It reproduces exactly every number:**
+  - 116,074 positions and 369,801 moves;
+  - `Win in 13` in the initial position;
+  - the 9 openings (edges `Win in 13`, corners and center `NoForcedWin`);
+  - Win 78,613, Loss 24,268, NoForcedWin 13,193;
+  - maximum distances 17 and 16, and the full distance histogram.
+- **It doesn't cover** the symmetry when O starts (it doesn't explore that position); the C# test verifies it.
+- It also rebuilds a forced line of 13 moves with no repeated positions: X1 O8 X4 O7 X6 O2 X0 O3 X8 O4 X5 O7 X2.
+- It is mentioned in `docs/solver-results.md` and in row 0.10 of the GDD.
 
-**Otros cambios antes del commit:**
-- **GDD 0.10:** fila en el historial con los resultados del solver y encabezado actualizado. Cami pidió no usar 1.0.
-- **Test de equivalencia marcado `[Category("Slow")]`.**
-- **CLAUDE.md, Testing:** "Los tests de categoría Slow se corren siempre que se toque el Core o el Solver."
+**Other changes before the commit:**
+- **GDD 0.10:** row in the history with the solver results and updated header. Cami asked not to use 1.0.
+- **Equivalence test marked `[Category("Slow")]`.**
+- **CLAUDE.md, Testing:** "Run the Slow category tests whenever the Core or the Solver is touched."
 
-**Aprendizajes:**
-- Medir en un menú del Editor deja los números reproducibles, sin que el assembly puro necesite logging.
-- Cuando el resultado es fuerte y sorprendente (el centro no fuerza nada), conviene un test de consistencia interna además del de equivalencia con las reglas.
-- Una segunda implementación escrita desde la especificación (el GDD), sin acceso al código y en otro lenguaje, es la verificación más fuerte de un resultado que no se puede comprobar a mano.
-  - Que los dos histogramas coincidan número por número descarta errores de implementación del código en C#.
-  - No descarta una lectura equivocada del GDD que compartan las dos implementaciones. Las dos las escribió Claude, en contextos distintos, así que la independencia es de código, no de criterio.
+**Learnings:**
+- Measuring in an Editor menu leaves the numbers reproducible, without the pure assembly needing logging.
+- When the result is strong and surprising (the center forces nothing), an internal consistency test is worth having on top of the equivalence test with the rules.
+- A second implementation written from the specification (the GDD), with no access to the code and in another language, is the strongest verification of a result that can't be checked by hand.
+  - That both histograms match number by number rules out implementation errors in the C# code.
+  - It doesn't rule out a wrong reading of the GDD shared by both implementations. Both were written by Claude, in different contexts, so the independence is of code, not of judgment.
 
-**Commit(s):** — (sin commitear; Cami revisa y commitea).
+**Commit(s):** — (not committed; Cami reviews and commits).
 
 ---
 
-## [19] 2026-10-29 — Modo contra la IA, fase 1: la IA sin UI (GDD §8.2)
+## [19] 2026-10-29 — Vs-AI mode, phase 1: the AI without UI (GDD §8.2)
 
-**Objetivo:** un `AIPlayer` que juega con la tabla del solver (ADR 0004), con tres niveles y una demora que no traba el bucle de turnos. La UI queda para la fase 2.
+**Goal:** an `AIPlayer` that plays with the solver table (ADR 0004), with three levels and a delay that doesn't jam the turn loop. The UI is left for phase 2.
 
-**Pedido / prompt:** `docs/prompts/ai-player.md`, con plan aprobado. Respuestas de Cami al plan:
-- `NotifyMatchStopped()` en `IPlayerController`, llamado por `GameManager` en todos los caminos, más una guarda de jugadas tardías como segunda red.
-- Entre empates, preferir `NoForcedWin` para mantener viva la partida; el empate inmediato, solo cuando la alternativa es perder.
+**Request / prompt:** `docs/prompts/ai-player.md`, with an approved plan. Cami's answers to the plan:
+- `NotifyMatchStopped()` in `IPlayerController`, called by `GameManager` on every path, plus a guard for late moves as a second safety net.
+- Between draws, prefer `NoForcedWin` to keep the match alive; the immediate draw, only when the alternative is losing.
 
-Agregados de Cami:
-- análisis a dos jugadas: victoria sin escape > victoria con escape > empate, y documentar que más profundo no se analiza;
-- flag por nivel "bloquear la derrota inmediata", activado en Normal y Perfecta;
-- `*.bytes binary` en `.gitattributes`.
+Cami's additions:
+- two-move analysis: win without escape > win with escape > draw, and document that nothing deeper is analysed;
+- a per-level flag "block the immediate loss", on in Normal and Perfecta (Perfect);
+- `*.bytes binary` in `.gitattributes`.
 
-**Qué hizo la IA:**
+**What the AI did:**
 - **Solver:**
-  - `CompactSolverTable` (nuevo): formato binario con header de reglas, las claves ordenadas y un byte por posición. Une las tablas de los dos iniciadores y busca por búsqueda binaria.
-  - `SolverTable`: expone `Entries` (las posiciones con su valor), que es lo que necesita la tabla compacta.
+  - `CompactSolverTable` (new): binary format with a rules header, the sorted keys and one byte per position. It merges the tables of both starting players and looks up by binary search.
+  - `SolverTable`: exposes `Entries` (the positions with their value), which is what the compact table needs.
 - **Game:**
-  - nuevos: `AIDifficulty`, `AILevelConfig`, `AIConfig`, `AIMoveCategory`, `AIMoveEvaluation`, `AIMoveEvaluator`, `AIMoveChooser` y `AIPlayer`;
-  - `GameConfigAsset`: sección de niveles (error y los dos flags por nivel) y la demora;
-  - `IPlayerController.NotifyMatchStopped()`, implementado vacío en los demás controllers;
-  - `GameManager`: lo llama en `Initialize`, `StartNewGame`, `DiscardMatch`, `Halt` y al terminar la partida, y suma la guarda de jugadas tardías;
-  - `SystemRandomSource`: constructor con semilla;
-  - el asmdef suma la referencia a `TicTacFade.Solver`.
-- **Editor:** `SolverTableGenerator`, menú `Tic-Tac-Fade/Solver/Generate AI table`. Generó `Config/AI/SolverTable.bytes`: 133.364 posiciones, 1,17 MB, alrededor de 1,2 s.
-- **Tests EditMode (`CompactSolverTableTests`, 8):**
-  - coincide con el solver para los dos iniciadores [Slow];
-  - contiene aperturas de O;
-  - ida y vuelta de bytes, determinística;
-  - posición desconocida;
-  - reglas distintas: error que pide regenerar;
-  - otros límites de empate: carga igual;
-  - datos truncados;
-  - el asset commiteado coincide con uno regenerado [Slow].
-- **Tests PlayMode (`AIMoveChooserTests` 20, `AIPlayerTests` 9):**
-  - la IA nunca juega una jugada ilegal (los 4×4 cruces de niveles, 40 semillas);
-  - Perfecta contra Perfecta: gana quien empieza, en 13, con los dos iniciadores;
-  - Perfecta empezando contra un rival al azar gana las 200 partidas de cada iniciador;
-  - tirada de error determinística por nivel;
-  - victoria inmediata: Fácil puede dejarla pasar; Normal y Perfecta la toman sin tirar;
-  - derrota inmediata: Normal bloquea aun en el error; Fácil puede dejarla abierta; sin jugada segura, cualquiera;
-  - tope en el límite exacto (pérdida y victoria), por las dos caras;
-  - repetición: perdiendo, la toma; ganando, la evita; prefiere una victoria sin escape;
-  - con `GameManager` real y reloj manual:
-    - el bucle sigue después de una jugada tardía;
-    - una partida entera entre dos IA con demora;
-    - demora 0 sincrónica;
-    - la demora pendiente se cancela con `DiscardMatch`, `StartNewGame`, `Halt` e `Initialize`;
-    - `NotifyMatchStopped` al terminar la partida;
-    - jugada tardía sin partida, ignorada.
-- **Docs:** borrador del ADR 0005; `CLAUDE.md` (dependencias `Game → Solver → Core`, el assembly del solver y `AIPlayer` en la lista de controllers); `.gitattributes`.
+  - new: `AIDifficulty`, `AILevelConfig`, `AIConfig`, `AIMoveCategory`, `AIMoveEvaluation`, `AIMoveEvaluator`, `AIMoveChooser` and `AIPlayer`;
+  - `GameConfigAsset`: levels section (error and the two flags per level) and the delay;
+  - `IPlayerController.NotifyMatchStopped()`, implemented empty in the other controllers;
+  - `GameManager`: calls it in `Initialize`, `StartNewGame`, `DiscardMatch`, `Halt` and when the match ends, and adds the late-move guard;
+  - `SystemRandomSource`: constructor with a seed;
+  - the asmdef adds the reference to `TicTacFade.Solver`.
+- **Editor:** `SolverTableGenerator`, menu `Tic-Tac-Fade/Solver/Generate AI table`. It generated `Config/AI/SolverTable.bytes`: 133,364 positions, 1.17 MB, around 1.2 s.
+- **EditMode tests (`CompactSolverTableTests`, 8):**
+  - matches the solver for both starting players [Slow];
+  - contains O's openings;
+  - bytes round trip, deterministic;
+  - unknown position;
+  - different rules: error asking to regenerate;
+  - other draw limits: loads anyway;
+  - truncated data;
+  - the committed asset matches a regenerated one [Slow].
+- **PlayMode tests (`AIMoveChooserTests` 20, `AIPlayerTests` 9):**
+  - the AI never plays an illegal move (the 4×4 level pairings, 40 seeds);
+  - Perfecta against Perfecta: whoever starts wins, in 13, with both starting players;
+  - Perfecta starting against a random opponent wins the 200 matches of each starting player;
+  - deterministic error roll per level;
+  - immediate win: Fácil (Easy) can let it pass; Normal and Perfecta take it without rolling;
+  - immediate loss: Normal blocks even on error; Fácil can leave it open; with no safe move, any;
+  - cap at the exact limit (loss and win), on both sides;
+  - repetition: when losing, it takes it; when winning, it avoids it; it prefers a win without escape;
+  - with a real `GameManager` and a manual clock:
+    - the loop goes on after a late move;
+    - a whole match between two AIs with a delay;
+    - synchronous delay 0;
+    - the pending delay is cancelled with `DiscardMatch`, `StartNewGame`, `Halt` and `Initialize`;
+    - `NotifyMatchStopped` when the match ends;
+    - late move with no match, ignored.
+- **Docs:** draft of ADR 0005; `CLAUDE.md` (dependencies `Game → Solver → Core`, the solver assembly and `AIPlayer` in the list of controllers); `.gitattributes`.
 
-**Hallazgos:**
-- **La tabla tiene que cubrir los dos iniciadores.** La revancha empieza con O, y la fase inicial de esas partidas no aparece en la tabla de X. Al unir las dos tablas, los valores coinciden en todas las posiciones compartidas.
-- **El Core no hizo falta tocarlo.** `GameState.PositionCounts` sigue `internal`: la IA juega cada candidata con `Apply` y lee el resultado.
-- **Bug latente en `GameManager`:** una jugada recibida después de `DiscardMatch` tiraba una `NullReferenceException`. Ningún controller lo provocaba hasta ahora; ahora lo cubren la cancelación y la guarda.
-- **Los escenarios de repetición no se escribieron a mano.** `execute_code` del MCP no respondía durante la implementación (ver Verificación), así que no se pudieron buscar posiciones fijas desde el Editor. Los tests las encuentran ellos mismos, con partidas con semilla que buscan volver a posiciones vistas, y exigen encontrar al menos una.
-  - Con límite 3, "victoria con y sin escape a la vez" apareció una sola vez en 1500 partidas; por eso ese test usa límite 2.
+**Findings:**
+- **The table has to cover both starting players.** The rematch starts with O, and the opening phase of those matches doesn't appear in X's table. On merging both tables, the values match on every shared position.
+- **There was no need to touch the Core.** `GameState.PositionCounts` stays `internal`: the AI plays each candidate with `Apply` and reads the result.
+- **Latent bug in `GameManager`:** a move received after `DiscardMatch` threw a `NullReferenceException`. No controller provoked it until now; now the cancellation and the guard cover it.
+- **The repetition scenarios weren't written by hand.** The MCP's `execute_code` wasn't responding during the implementation (see Verification), so fixed positions couldn't be searched for from the Editor. The tests find them by themselves, with seeded matches that try to return to seen positions, and they require finding at least one.
+  - With limit 3, "win with and without escape at the same time" showed up only once in 1500 matches; that's why that test uses limit 2.
 
-**Revisión humana:** plan aprobado con los agregados de arriba. Cami aprobó la fase 1 con los ajustes que figuran en Verificación y pidió commitearla como punto de control antes de la fase 2.
+**Human review:** plan approved with the additions above. Cami approved phase 1 with the adjustments listed in Verification and asked to commit it as a checkpoint before phase 2.
 
-**Verificación:**
-- Compila sin errores; la consola quedó limpia. Los warnings CS0618 de `SceneWiringAndInputTests` ya estaban.
-- EditMode 49/49 vía MCP, Slow incluidos (alrededor de 28 s).
-- PlayMode vía MCP: la primera corrida dio 0 tests y no se contó. Después de forzar la recompilación y filtrar por assembly: **98/98** (69 anteriores + 29 nuevos), en alrededor de 23 s. La regla de los "0 tests" de `CLAUDE.md` se actualizó con este paso.
-- **`execute_code` del MCP no respondía** durante la implementación: devolvía `success: false` sin mensaje, incluso con `return 1 + 1`. El resto de las herramientas del MCP (refresh, consola, tests, menús) andaba. Volvió a responder en la revisión, y ahí se usó para forzar el guardado de `GameConfig.asset`.
-- **Verificación independiente con O empezando:** `tools/verify_solver.py` se extendió para explorar también esa posición inicial y la unión de los dos grafos.
-  - Da 133.364 posiciones (igual que el asset) y `Win in 13` para los dos iniciadores.
-  - Coincide con el cálculo solo con X en todas las posiciones compartidas.
-  - Cami lo había verificado igual desde la conversación de planificación.
-  - Queda registrado en `docs/solver-results.md`.
+**Verification:**
+- Compiles with no errors; the console was left clean. The CS0618 warnings in `SceneWiringAndInputTests` were already there.
+- EditMode 49/49 via MCP, Slow included (around 28 s).
+- PlayMode via MCP: the first run gave 0 tests and wasn't counted. After forcing the recompilation and filtering by assembly: **98/98** (69 previous + 29 new), in around 23 s. The "0 tests" rule in `CLAUDE.md` was updated with this step.
+- **The MCP's `execute_code` wasn't responding** during the implementation: it returned `success: false` with no message, even with `return 1 + 1`. The rest of the MCP tools (refresh, console, tests, menus) worked. It responded again during the review, and there it was used to force the save of `GameConfig.asset`.
+- **Independent verification with O starting:** `tools/verify_solver.py` was extended to also explore that initial position and the union of both graphs.
+  - It gives 133,364 positions (the same as the asset) and `Win in 13` for both starting players.
+  - It matches the X-only computation on every shared position.
+  - Cami had verified it the same way from the planning conversation.
+  - It is recorded in `docs/solver-results.md`.
 
-**Ajustes de la revisión de Cami (antes del commit):**
-- `GameConfig.asset` se guardó a la fuerza, para que los campos nuevos de la IA queden en este commit. También se escribieron los tres campos del timer online, que faltaban en el YAML; tienen los mismos valores por defecto.
-- Comentario en el test de "victoria con escape" sobre por qué usa `RepetitionLimit = 2`.
-- `CLAUDE.md`: la regla de los "0 tests" ahora dice recompilar y filtrar por assembly.
+**Adjustments from Cami's review (before the commit):**
+- `GameConfig.asset` was force-saved, so the new AI fields land in this commit. The three online timer fields, which were missing in the YAML, were also written; they have the same default values.
+- Comment in the "win with escape" test about why it uses `RepetitionLimit = 2`.
+- `CLAUDE.md`: the "0 tests" rule now says to recompile and filter by assembly.
 
-**Aprendizajes:**
-- Cuando una herramienta de exploración falla, un test que busca su propio escenario y exige encontrar al menos uno reemplaza a una posición fija, y además no depende de cómo quedó la tabla.
-- Para un caso que casi no aparece, conviene buscar el parámetro que lo vuelve frecuente sin cambiar la lógica bajo prueba (aquí, el límite de repetición), en vez de aumentar la cantidad de partidas a ciegas.
+**Learnings:**
+- When an exploration tool fails, a test that looks for its own scenario and requires finding at least one replaces a fixed position, and it also doesn't depend on how the table turned out.
+- For a case that barely shows up, it is worth looking for the parameter that makes it frequent without changing the logic under test (here, the repetition limit), instead of blindly increasing the number of matches.
 
-**Commit(s):** — (sin commitear; Cami revisa y commitea).
+**Commit(s):** — (not committed; Cami reviews and commits).
 
 ---
 
-## [20] 2026-10-29 — Modo contra la IA, fase 2: menú, nivel, HUD y resultado (GDD §8.2)
+## [20] 2026-10-29 — Vs-AI mode, phase 2: menu, level, HUD and result (GDD §8.2)
 
-**Objetivo:** jugar contra la IA desde el menú: Menú → elección de nivel → Partida → Resultado → Revancha | Menú.
+**Goal:** play against the AI from the menu: Menu → level choice → Match → Result → Rematch | Menu.
 
-**Pedido / prompt:** fase 2 de `docs/prompts/ai-player.md`, después de commitear la fase 1 como punto de control (`e3942f2`).
+**Request / prompt:** phase 2 of `docs/prompts/ai-player.md`, after committing phase 1 as a checkpoint (`e3942f2`).
 
-**Qué hizo la IA:**
+**What the AI did:**
 - **Game:**
-  - `FlowState.AILevelSelect = 5`, al final del enum, con "volver" al menú.
+  - `FlowState.AILevelSelect = 5`, at the end of the enum, with "volver" to the menu.
   - `MatchFlow`:
-    - `OpenAILevelSelect`, `CancelAILevelSelect` y `PlayAgainstAI(AIDifficulty)`;
-    - carga la tabla una vez desde un `TextAsset` serializado y hace avanzar la IA desde su `Update`;
-    - expone `IsVsAI`, `AIDifficulty` y `AISymbol`;
-    - al volver al menú (desde el resultado o con "Salir") pone otra vez los dos `LocalHumanPlayer`.
-  - `GameManager`: expone `AIConfig` y `Rules` (las reglas del tablero también antes de la primera partida, para validar la tabla).
+    - `OpenAILevelSelect`, `CancelAILevelSelect` and `PlayAgainstAI(AIDifficulty)`;
+    - loads the table once from a serialized `TextAsset` and advances the AI from its `Update`;
+    - exposes `IsVsAI`, `AIDifficulty` and `AISymbol`;
+    - when going back to the menu (from the result or with "Salir") puts the two `LocalHumanPlayer`s back.
+  - `GameManager`: exposes `AIConfig` and `Rules` (the board rules also before the first match, to validate the table).
 - **UI:**
-  - `AILevelScreen` (nuevo): tres botones de nivel y "Volver";
-  - `MenuScreen`: botón "Jugar contra la IA";
+  - `AILevelScreen` (new): three level buttons and "Volver";
+  - `MenuScreen`: "Jugar contra la IA" button;
   - `GameHud`: "Turno de la IA";
   - `ResultScreen`: "¡Ganaste!" / "Ganó la IA".
-- **Escena** (`TicTacFadeGame.unity`), regenerada por el builder vía MCP y corrida dos veces sin duplicados:
-  - `MenuScreen/.../MenuButtons/PlayVsAIButton` (nuevo), debajo de "Jugar local";
-  - `AILevelScreen` (nuevo, con `SafeArea` en los cuatro bordes, `CanvasGroup` y `FlowScreenVisibility` en `AILevelSelect`), con `AILevelTitle`, `AILevelSubtitle`, `AIEasyButton`, `AINormalButton`, `AIPerfectButton` y `AILevelBackButton`;
-  - `MatchFlow.aiTable` apunta a `Config/AI/SolverTable.bytes`.
-- **Tests PlayMode:**
-  - `AIFlowTests` (nuevo, 6), sobre la escena real y con reloj manual:
-    - flujo completo menú → nivel → partida → resultado → revancha (empieza la IA y abre) → menú;
-    - cada botón arranca su nivel (3);
-    - "Volver" desde el nivel;
-    - "Salir" mientras la IA piensa cancela su jugada, y después "Jugar local" vuelve a ser con dos humanos y empieza X.
-  - `SceneWiringAndInputTests`: `AILevelScreen` sin referencias nulas y 7 `FlowScreenVisibility`. El chequeo de `MatchFlow` ahora cubre también `aiTable`.
-- **Docs:** GDD v0.11 (§4.3 y §8.2 con el diseño final), ADR 0005 aceptado con la sección de flujo.
+- **Scene** (`TicTacFadeGame.unity`), regenerated by the builder via MCP and run twice with no duplicates:
+  - `MenuScreen/.../MenuButtons/PlayVsAIButton` (new), below "Jugar local";
+  - `AILevelScreen` (new, with `SafeArea` on the four edges, `CanvasGroup` and `FlowScreenVisibility` in `AILevelSelect`), with `AILevelTitle`, `AILevelSubtitle`, `AIEasyButton`, `AINormalButton`, `AIPerfectButton` and `AILevelBackButton`;
+  - `MatchFlow.aiTable` points to `Config/AI/SolverTable.bytes`.
+- **PlayMode tests:**
+  - `AIFlowTests` (new, 6), on the real scene and with a manual clock:
+    - full flow menu → level → match → result → rematch (the AI starts and opens) → menu;
+    - each button starts its level (3);
+    - "Volver" from the level screen;
+    - "Salir" while the AI is thinking cancels its move, and afterwards "Jugar local" is two humans again and X starts.
+  - `SceneWiringAndInputTests`: `AILevelScreen` with no null references and 7 `FlowScreenVisibility`. The `MatchFlow` check now also covers `aiTable`.
+- **Docs:** GDD v0.11 (§4.3 and §8.2 with the final design), ADR 0005 accepted with the flow section.
 
-**Decisiones tomadas por la IA (para revisar):**
-- **Un solo estado nuevo.** La partida y el resultado reutilizan `Playing` y `Result`, como el online. Dos estados más habrían duplicado la visibilidad de las pantallas sin agregar comportamiento.
-- **El humano es siempre X y la IA O.** El símbolo no alterna; lo que alterna es quién empieza.
-- **Textos del resultado:** "¡Ganaste!" / "Ganó la IA", en vez de "¡Jugador X gana!".
-- **Tabla faltante o inválida:** error en consola y la partida no arranca. No había mensaje en pantalla, porque con el asset commiteado y el test Slow no debería pasar. Cami lo corrigió en la revisión (abajo).
+**Decisions made by the AI (to review):**
+- **A single new state.** The match and the result reuse `Playing` and `Result`, like online. Two more states would have duplicated the screens' visibility without adding behavior.
+- **The human is always X and the AI O.** The symbol doesn't alternate; what alternates is who starts.
+- **Result texts:** "¡Ganaste!" / "Ganó la IA", instead of "¡Jugador X gana!".
+- **Missing or invalid table:** error in the console and the match doesn't start. There was no on-screen message, because with the committed asset and the Slow test it shouldn't happen. Cami corrected it in the review (below).
 
-**Revisión humana:** fase 2 aprobada, con dos ajustes:
-- **Tabla de la IA faltante o inválida:** mensaje en pantalla y quedarse en el menú, como con los demás errores. Nunca un botón que no hace nada.
-  - La tabla se valida en `OpenAILevelSelect`, antes de mostrar los niveles.
-  - Valor nuevo `SessionFailure.AIUnavailable` = 14, con el texto "La IA no está disponible en esta versión del juego.", mostrado en `MenuStatus`.
-  - Test `UnusableAITable_ShowsErrorAndStaysInMenu`, con dos casos: referencia faltante y datos que no son una tabla. Verifica que el flujo se queda en el menú, que aparece el mensaje y que el error se limpia al pasar a otra pantalla.
-  - El nombre `SessionFailure` quedó corto para este caso; renombrarlo queda anotado como un cambio aparte.
-- **`CLAUDE.md`:** la regla de los "0 tests" se generalizó a EditMode y PlayMode, con el orden de reintentos (recompilar y filtrar por assembly; `init_timeout` mayor; Test Runner de Cami) y la nota de copiar el `job_id` exacto.
+**Human review:** phase 2 approved, with two adjustments:
+- **Missing or invalid AI table:** an on-screen message and staying in the menu, like with the other errors. Never a button that does nothing.
+  - The table is validated in `OpenAILevelSelect`, before showing the levels.
+  - New value `SessionFailure.AIUnavailable` = 14, with the text "La IA no está disponible en esta versión del juego.", shown in `MenuStatus`.
+  - Test `UnusableAITable_ShowsErrorAndStaysInMenu`, with two cases: missing reference and data that isn't a table. It verifies that the flow stays in the menu, that the message appears and that the error is cleared on moving to another screen.
+  - The name `SessionFailure` fell short for this case; renaming it is noted as a separate change.
+- **`CLAUDE.md`:** the "0 tests" rule was generalized to EditMode and PlayMode, with the order of retries (recompile and filter by assembly; larger `init_timeout`; Cami's Test Runner) and the note about copying the exact `job_id`.
 
-Después de los ajustes: compila sin errores, PlayMode 106/106 (filtrado por assembly) y EditMode 49/49 en el primer intento.
+After the adjustments: compiles with no errors, PlayMode 106/106 (filtered by assembly) and EditMode 49/49 on the first attempt.
 
-**Prueba manual (Cami):** jugó contra la IA en los tres niveles; anda bien. Cami pidió commitear la fase 2.
+**Manual test (Cami):** she played against the AI on the three levels; it works well. Cami asked to commit phase 2.
 
-**Verificación:**
-- Compila sin errores; la consola quedó limpia.
-- PlayMode 104/104 vía MCP, filtrado por assembly (98 anteriores + 6 nuevos).
-- EditMode 49/49 vía MCP, Slow incluidos. **Las dos primeras corridas fallaron al inicializar** ("tests did not start within timeout", 0 tests), una sin filtro y otra filtrada por assembly con recompilación previa. La escena no estaba *dirty*. La tercera, sin filtro y con `init_timeout` de 120 s, corrió completa. No se contaron las fallidas.
-- **Falta probar a mano:**
-  - el Simulator en los dos perfiles de siempre (menú con un botón más y la pantalla de nivel, dentro de la safe area);
-  - una partida contra cada nivel en el dispositivo, para sentir la demora y ajustar los porcentajes de error.
+**Verification:**
+- Compiles with no errors; the console was left clean.
+- PlayMode 104/104 via MCP, filtered by assembly (98 previous + 6 new).
+- EditMode 49/49 via MCP, Slow included. **The first two runs failed to initialize** ("tests did not start within timeout", 0 tests), one without a filter and another filtered by assembly with a previous recompilation. The scene wasn't *dirty*. The third, without a filter and with a 120 s `init_timeout`, ran in full. The failed ones weren't counted.
+- **Still to be tested by hand:**
+  - the Simulator in the usual two profiles (menu with one more button and the level screen, inside the safe area);
+  - a match against each level on the device, to feel the delay and tune the error percentages.
 
-**Aprendizajes:**
-- El fallo de inicialización del runner por MCP no es exclusivo de PlayMode: también pasó en EditMode, en una corrida justo después de otra de PlayMode. Reintentar con un `init_timeout` mayor alcanzó.
-- Hay que copiar el `job_id` exacto del resultado de `run_tests`: varias consultas a ids mal transcritos devolvieron "Unknown job_id".
+**Learnings:**
+- The MCP runner's initialization failure isn't exclusive to PlayMode: it also happened in EditMode, in a run right after a PlayMode one. Retrying with a larger `init_timeout` was enough.
+- The exact `job_id` from the `run_tests` result has to be copied: several queries with mistranscribed ids returned "Unknown job_id".
 
-**Commit(s):** — (sin commitear; Cami revisa y commitea).
+**Commit(s):** — (not committed; Cami reviews and commits).
 
 ---
 
-## [0] 2026-09-22 — Definición del MVP y setup de documentación
+## [0] 2026-09-22 — MVP definition and documentation setup
 
-**Objetivo:** revisar el GDD v0.1, cerrar las decisiones pendientes y preparar el repo para el trabajo con agentes.
+**Goal:** review GDD v0.1, close the pending decisions and prepare the repo for working with agents.
 
-**Pedido / prompt:** análisis del GDD (qué está bien, qué falta, riesgos de gameplay a largo plazo) y propuesta de arquitectura y de setup de IA.
+**Request / prompt:** analysis of the GDD (what is good, what is missing, long-term gameplay risks) and a proposal for the architecture and the AI setup.
 
-**Qué hizo la IA:**
-- Detectó los problemas del documento:
-  - loop infinito entre buenos jugadores;
-  - posible ventaja del primer jugador;
-  - la definición de "vida" solo servía con la cola llena;
-  - faltaba el indicador de la ficha que vence del rival;
-  - accesibilidad de los indicadores por opacidad;
-  - faltaba el invariante de jugada legal.
-- Propuso la arquitectura: Core en C# puro, `IPlayerController`, `Move` como comando y `GameConfig` parametrizable.
-- Redactó el GDD v0.2, `CLAUDE.md` y los ADR 0001 y 0002.
+**What the AI did:**
+- Detected the document's problems:
+  - infinite loop between good players;
+  - possible first-player advantage;
+  - the definition of "life" only worked with the queue full;
+  - the indicator of the opponent's expiring piece was missing;
+  - accessibility of the opacity-based indicators;
+  - the legal-move invariant was missing.
+- Proposed the architecture: Core in pure C#, `IPlayerController`, `Move` as a command and a parameterizable `GameConfig`.
+- Wrote GDD v0.2, `CLAUDE.md` and ADRs 0001 and 0002.
 
-**Revisión humana (decisiones de Cami):**
-- Empate: repetición + tope de jugadas.
-- Timeout: jugada aleatoria + modo ausente con timer reducido hasta que el jugador vuelve a jugar (inspirado en Hearthstone), para dar chance de reconexión.
-- MVP con ayudas visuales completas.
-- El GDD pasa al repo como fuente de verdad.
+**Human review (Cami's decisions):**
+- Draw: repetition + move cap.
+- Timeout: random move + absent mode with a reduced timer until the player plays again (inspired by Hearthstone), to give a chance to reconnect.
+- MVP with full visual aids.
+- The GDD moves to the repo as the source of truth.
 
-**Verificación:** N/A (documentación).
+**Verification:** N/A (documentation).
 
-**Aprendizajes:**
-- Cerrar las reglas ambiguas antes de escribir código evita que el agente las decida solo.
-- La regla "si el código y el GDD difieren, preguntar" quedó en `CLAUDE.md`.
+**Learnings:**
+- Closing the ambiguous rules before writing code keeps the agent from deciding them on its own.
+- The rule "if the code and the GDD differ, ask" went into `CLAUDE.md`.
 
 **Commit(s):** —

@@ -1,22 +1,22 @@
-Online, iteración 3: timer de turno, modo ausente, desconexiones y abandono (GDD §3.5 y §5).
+Online, iteration 3: turn timer, absent mode, disconnections and abandonment (GDD §3.5 and §5).
 
-Decisión de Cami: se confirma que 3 vencimientos consecutivos cuentan como derrota por abandono. Actualizá el GDD sacando el "a confirmar".
+Cami's decision: it is confirmed that 3 consecutive timeouts count as a loss by abandonment. Update the GDD removing the "to be confirmed".
 
-Timer de turno, solo en online:
-El host es el dueño del timer. Al empezar cada turno le avisa al cliente la duración; el cliente muestra la cuenta regresiva localmente, pero la única verdad es la del host.
-Duraciones desde GameConfig: 30 s normal, 10 s en modo ausente.
-Al vencer, el host elige una jugada legal al azar para ese jugador y la difunde como cualquier jugada confirmada. La aleatoriedad vive en la capa Game con una fuente inyectable, nunca en el Core.
-Modo ausente: después de un vencimiento, ese jugador pasa a 10 s por turno hasta que haga una jugada propia.
-3 vencimientos consecutivos: derrota por abandono.
-Abandono: "Salir" en medio de una partida online deja de ser solo cerrar la sesión y pasa a contar como derrota de quien se va. El que queda ve "Ganaste: el rival abandonó". El abandono es un resultado de partida, no una regla del tablero: si modelarlo requiere tocar el Core, pará y proponé antes.
-Desconexiones:
-Si se cae el cliente, la partida sigue en el host y los turnos del cliente vencen normalmente hasta el abandono. Sin reconexión en el MVP.
-Si se cae el host, el cliente vuelve al menú con "Se perdió la conexión con el rival".
-Pendiente de la iteración 2: si una propuesta del cliente no recibe respuesta en un tiempo razonable, se desbloquea el input y se trata como caída del host.
-HUD: tiempo restante visible en online, con un estado distinto en modo ausente, e indicador de "ausente" sobre el jugador que corresponda.
+Turn timer, online only:
+The host owns the timer. At the start of each turn it tells the client the duration; the client shows the countdown locally, but the only truth is the host's.
+Durations from GameConfig: 30 s normal, 10 s in absent mode.
+On expiry, the host picks a random legal move for that player and broadcasts it like any confirmed move. The randomness lives in the Game layer with an injectable source, never in the Core.
+Absent mode: after a timeout, that player goes to 10 s per turn until they make a move of their own.
+3 consecutive timeouts: loss by abandonment.
+Abandonment: "Salir" in the middle of an online match stops being just closing the session and starts counting as a loss for whoever leaves. The one who stays sees "Ganaste: el rival abandonó". Abandonment is a match result, not a board rule: if modelling it requires touching the Core, stop and propose first.
+Disconnections:
+If the client drops, the match goes on at the host and the client's turns expire normally until abandonment. No reconnection in the MVP.
+If the host drops, the client goes back to the menu with "Se perdió la conexión con el rival".
+Pending from iteration 2: if a client proposal gets no answer in a reasonable time, the input is unlocked and it is treated as a host drop.
+HUD: remaining time visible online, with a different state in absent mode, and an "absent" indicator on the corresponding player.
 
-Tests: inyectá la fuente de tiempo, para que ningún test espere 30 segundos reales. Con el transporte en memoria cubrí: vencimiento con jugada aleatoria legal, entrada y salida del modo ausente, abandono al tercer vencimiento, abandono por "Salir", caída del host, caída del cliente, y propuesta sin respuesta.
+Tests: inject the time source, so no test waits 30 real seconds. With the in-memory transport cover: timeout with a random legal move, entering and leaving absent mode, abandonment on the third timeout, abandonment by "Salir", host drop, client drop, and proposal without answer.
 
-Verificación manual en dos dispositivos, uno en wifi y otro con datos móviles: dejar vencer un turno, volver a jugar y salir del modo ausente, abandonar con "Salir", y cerrar la app del cliente a mitad de partida para ver cómo el host termina ganando por abandono.
+Manual verification on two devices, one on wifi and the other on mobile data: let a turn expire, play again and leave absent mode, abandon with "Salir", and close the client app mid-match to see how the host ends up winning by abandonment.
 
-Documentación: ai-log, GDD §3.5 y §5, y ADR 0002 si cambia el modelo de red.
+Documentation: ai-log, GDD §3.5 and §5, and ADR 0002 if the network model changes.

@@ -1,118 +1,118 @@
-# ADR 0002 — Online con Unity Multiplayer Services (sesiones + código de sala)
+# ADR 0002 — Online with Unity Multiplayer Services (sessions + room code)
 
-**Estado:** Aceptada
-**Fecha:** 2026-09-22
+**Status:** Accepted
+**Date:** 2026-09-22
 
-## Contexto
+## Context
 
-El MVP necesita partidas 1v1 online entre celulares, con un flujo de "creo sala, te paso un código, te unís". Dos celulares en redes móviles distintas no pueden conectarse en forma directa por NAT y firewalls, así que hace falta un intermediario.
+The MVP needs 1v1 online matches between phones, with a "I create a room, I give you a code, you join" flow. Two phones on different mobile networks can't connect directly because of NAT and firewalls, so an intermediary is needed.
 
-Alternativas consideradas:
+Alternatives considered:
 
 1. **Unity Multiplayer Services (Sessions) + Relay + Netcode for GameObjects.**
-2. **Backend propio** (por ejemplo, WebSockets en un servidor propio).
-3. **Servicios de terceros** tipo Photon.
+2. **Own backend** (for example, WebSockets on our own server).
+3. **Third-party services** such as Photon.
 
-## Decisión
+## Decision
 
-Usar **Unity Multiplayer Services (paquete `com.unity.services.multiplayer`)** con sesiones y Relay.
+Use **Unity Multiplayer Services (package `com.unity.services.multiplayer`)** with sessions and Relay.
 
-- El host crea la sesión y el servicio genera un **join code** corto y fácil de dictar.
-- El cliente entra con `JoinSessionByCodeAsync(joinCode)`.
-- El SDK se encarga del lobby, la asignación de Relay y el establecimiento de la conexión de Netcode.
-- Modelo host-cliente, con el host como autoridad de las reglas y del timer.
+- The host creates the session and the service generates a short **join code** that is easy to dictate.
+- The client joins with `JoinSessionByCodeAsync(joinCode)`.
+- The SDK takes care of the lobby, the Relay allocation and establishing the Netcode connection.
+- Host-client model, with the host as the authority over the rules and the timer.
 
-Por la red viajan **jugadas** (`Move`), no el estado del tablero. Cada cliente aplica las mismas reglas del Core y compara el hash de posición para detectar desincronización.
+**Moves** (`Move`) travel over the network, not the board state. Each client applies the same Core rules and compares the position hash to detect desync.
 
-## Consecuencias
+## Consequences
 
-**A favor:**
+**For:**
 
-- Es exactamente el flujo de "sala con código" que pide el GDD, sin backend propio.
-- Relay resuelve NAT y firewalls: ambos clientes ven siempre la misma IP y puerto.
-- Está integrado con Unity 6 y con Netcode for GameObjects.
-- Soporta Web si se usa Unity Transport 2.0+ con WebSockets, lo que deja abierta la puerta al build de WebGL para portfolio.
+- It is exactly the "room with a code" flow the GDD asks for, with no own backend.
+- Relay solves NAT and firewalls: both clients always see the same IP and port.
+- It is integrated with Unity 6 and with Netcode for GameObjects.
+- It supports Web if Unity Transport 2.0+ is used with WebSockets, which leaves the door open to the WebGL build for the portfolio.
 
-**En contra / riesgos:**
+**Against / risks:**
 
-- **Dependencia de Unity Gaming Services:** requiere cuenta, proyecto vinculado y autenticación anónima.
-- **Costo por uso** más allá del tier gratuito. Hay que monitorearlo, aunque para un proyecto de portfolio debería alcanzar de sobra.
-- **Si cae el host, cae la partida.** Aceptado en el MVP: el cliente vuelve al menú con un mensaje.
-- La **reconexión** es *best effort* en el MVP. El modo ausente del GDD §3.5 da margen, pero no garantiza volver a la partida.
+- **Dependency on Unity Gaming Services:** it requires an account, a linked project and anonymous authentication.
+- **Usage cost** beyond the free tier. It has to be monitored, although for a portfolio project it should be more than enough.
+- **If the host drops, the match drops.** Accepted in the MVP: the client goes back to the menu with a message.
+- **Reconnection** is *best effort* in the MVP. The absent mode in GDD §3.5 gives some margin, but doesn't guarantee getting back into the match.
 
-## Mitigación de acoplamiento
+## Coupling mitigation
 
-La capa `Net` se esconde detrás de una interfaz propia (`IMatchTransport` o similar) en `Game`. Si más adelante hay que cambiar de proveedor, el Core y la UI no se tocan.
+The `Net` layer hides behind our own interface (`IMatchTransport` or similar) in `Game`. If the provider has to change later, the Core and the UI are not touched.
 
-## Implementación (actualizado 2026-09-23, online iteración 1: salas sin sincronización)
+## Implementation (updated 2026-09-23, online iteration 1: rooms without sync)
 
-Se mantiene la decisión. Cómo quedó implementada y en qué se precisa lo de arriba:
+The decision stands. How it was implemented and what it makes more precise about the above:
 
-- **Interfaz:** la del ciclo de vida de la sala se llama `ISessionService` (en `Game`): crear, unirse con código, salir, y eventos de rival conectado/desconectado y sala perdida. Las fallas vuelven como un enum propio (`SessionFailure`), nunca como excepciones del SDK. El envío de jugadas (lo que este ADR llamaba `IMatchTransport`) es de la iteración siguiente y puede ser otra interfaz.
-- **Wiring sin singletons:** Unity no serializa campos de interfaz, así que la escena referencia una base abstracta `SessionServiceBehaviour : MonoBehaviour, ISessionService`. `TicTacFade.Net` aporta `UgsSessionService` y los tests un fake sin red.
-- **Paquetes:** `com.unity.services.multiplayer` 2.3.3, `com.unity.netcode.gameobjects` 2.13.3 y `com.unity.multiplayer.playmode` 3.0.0 (builtin en Unity 6.6).
-- **Sesiones:** privadas, `MaxPlayers = 2`, con `WithRelayNetwork()`. El SDK arranca el host/cliente de Netcode sobre el `NetworkManager` + `UnityTransport` de la escena, y falla si no existe. Al salir se usa `LeaveAsync` (el SDK pide no llamar a `NetworkManager.Shutdown()` a mano). El host usa `DeleteAsync`, para que el otro jugador vea la sala cerrada en vez de quedar como host migrado de una sala vacía. Antes de cada crear/unirse se espera a que el `NetworkManager` quede libre.
-- **Inicialización perezosa:** Unity Services y la autenticación anónima se inicializan en el primer "Crear sala" o "Unirse", no al arrancar. El modo local nunca toca UGS (hay un test PlayMode que lo verifica).
-- **Multiplayer Play Mode:** cada jugador virtual usa un perfil de autenticación propio, derivado de la ruta de su clon (`PlayModeAuthProfile`). El paquete de Authentication ya lo hace leyendo argumentos de línea de comandos, pero como comportamiento interno no documentado; acá queda explícito.
-- **Limitación del SDK (verificada contra el servicio real):** `LobbyConverter.ToSessionException` descarta la excepción original y solo conserva "lobby not found" (→ `SessionNotFound`). Sala llena, código con caracteres inválidos, etc. llegan como `SessionError.Unknown` con solo un mensaje. Cómo se maneja:
-  - **Formato del código, validado localmente** (`JoinCodeFormat`, en Net y detrás de `ISessionService.IsWellFormedCode`, porque el formato es del proveedor): alfabeto `6789BCDFGHJKLMNPQRTW`, 6 a 12 caracteres. El SDK lo documenta para los join codes de Relay; para los de Lobby no hay documentación, pero el servicio real es consistente con esa regla (ver ai-log [13]). Un código fuera de formato da "Código inválido" sin salir a la red.
-  - Si el servicio igual devuelve un error de formato, se reconoce por el mensaje (única señal que deja el SDK) y también da "Código inválido".
-  - Cualquier otro rechazo al unirse (p. ej. sala llena) da un mensaje genérico: "No se pudo unir a la sala. Revisá el código o pedí uno nuevo.".
+- **Interface:** the one for the room lifecycle is called `ISessionService` (in `Game`): create, join with code, leave, and events for opponent connected/disconnected and room lost. Failures come back as our own enum (`SessionFailure`), never as SDK exceptions. Sending moves (what this ADR called `IMatchTransport`) belongs to the next iteration and may be another interface.
+- **Wiring without singletons:** Unity doesn't serialize interface fields, so the scene references an abstract base `SessionServiceBehaviour : MonoBehaviour, ISessionService`. `TicTacFade.Net` provides `UgsSessionService` and the tests a fake with no network.
+- **Packages:** `com.unity.services.multiplayer` 2.3.3, `com.unity.netcode.gameobjects` 2.13.3 and `com.unity.multiplayer.playmode` 3.0.0 (builtin in Unity 6.6).
+- **Sessions:** private, `MaxPlayers = 2`, with `WithRelayNetwork()`. The SDK starts the Netcode host/client on the scene's `NetworkManager` + `UnityTransport`, and fails if it doesn't exist. Leaving uses `LeaveAsync` (the SDK asks not to call `NetworkManager.Shutdown()` by hand). The host uses `DeleteAsync`, so the other player sees the room closed instead of becoming the migrated host of an empty room. Before each create/join it waits for the `NetworkManager` to be free.
+- **Lazy initialization:** Unity Services and anonymous authentication are initialized on the first "Crear sala" or "Unirse", not at startup. Local mode never touches UGS (a PlayMode test verifies it).
+- **Multiplayer Play Mode:** each virtual player uses its own authentication profile, derived from its clone's path (`PlayModeAuthProfile`). The Authentication package already does this by reading command-line arguments, but as undocumented internal behavior; here it is made explicit.
+- **SDK limitation (verified against the real service):** `LobbyConverter.ToSessionException` discards the original exception and only keeps "lobby not found" (→ `SessionNotFound`). Full room, code with invalid characters, etc. arrive as `SessionError.Unknown` with only a message. How it is handled:
+  - **Code format, validated locally** (`JoinCodeFormat`, in Net and behind `ISessionService.IsWellFormedCode`, because the format belongs to the provider): alphabet `6789BCDFGHJKLMNPQRTW`, 6 to 12 characters. The SDK documents it for Relay join codes; for Lobby ones there is no documentation, but the real service is consistent with that rule (see ai-log [13]). A code out of format gives "Código inválido" without going to the network.
+  - If the service still returns a format error, it is recognized by the message (the only signal the SDK leaves) and also gives "Código inválido".
+  - Any other rejection when joining (e.g. full room) gives a generic message: "No se pudo unir a la sala. Revisá el código o pedí uno nuevo.".
 
-## Implementación (actualizado 2026-09-23, online iteración 2: partida jugable)
+## Implementation (updated 2026-09-23, online iteration 2: playable match)
 
-### Transporte de jugadas: mensajes con nombre de Netcode, no RPCs
+### Move transport: Netcode named messages, not RPCs
 
-- **Decisión:** `NgoMatchTransport` (en `TicTacFade.Net`) usa `CustomMessagingManager` con un solo mensaje con nombre (`TicTacFade.Match`), identificado por un byte de tipo. Se descartaron los RPCs porque necesitan un `NetworkObject`: spawnearlo con un prefab registrado, o ponerlo en la escena. La escena la genera el builder por código, y un `NetworkObject` en escena necesita un `GlobalObjectIdHash` que el editor calcula al validarlo; generarlo por script es frágil y un error ahí rompe la conexión en silencio. Los mensajes con nombre viajan directo sobre el `NetworkManager`, sin objetos ni prefabs.
-- **Entrega:** todos los mensajes van con `NetworkDelivery.ReliableSequenced`, explícito en el código (constante `Delivery`) aunque sea el default del método. Una jugada confirmada perdida o desordenada no puede quedar librada a que la detecte la comparación de hash.
-- **Interfaz:** `IMatchTransport` (en Game), con una base serializable `MatchTransportBehaviour` para la escena, igual que `ISessionService`. Los tests usan un transporte en memoria con cola y bombeo explícito.
-- **Mensajes:** `StartMatch`, `Propose`, `Confirmed` (jugada, número de jugada, `PositionKey.Value` después de aplicarla), `Rejected`, `Ack` (número de jugada y clave del cliente), `RematchRequest`, `Desync`. Viajan jugadas, nunca el tablero.
-- **Buffer de entrada:** lo que llega antes de que el flujo del dispositivo abra el canal (`Open`) se guarda y se entrega al abrir. Cubre el caso de un `StartMatch` que el host manda apenas conecta el cliente, antes de que el join haya terminado del lado del cliente. (Desde 2026-10-06 el arranque ya no depende de este buffer: ver el handshake `Ready` más abajo.)
+- **Decision:** `NgoMatchTransport` (in `TicTacFade.Net`) uses `CustomMessagingManager` with a single named message (`TicTacFade.Match`), identified by a type byte. RPCs were ruled out because they need a `NetworkObject`: spawning it with a registered prefab, or putting it in the scene. The scene is generated by the builder in code, and an in-scene `NetworkObject` needs a `GlobalObjectIdHash` that the editor computes when validating it; generating it by script is fragile and a mistake there silently breaks the connection. Named messages travel directly over the `NetworkManager`, with no objects or prefabs.
+- **Delivery:** every message goes with `NetworkDelivery.ReliableSequenced`, explicit in the code (constant `Delivery`) even though it is the method's default. A lost or out-of-order confirmed move can't be left to the hash comparison to detect.
+- **Interface:** `IMatchTransport` (in Game), with a serializable base `MatchTransportBehaviour` for the scene, the same as `ISessionService`. The tests use an in-memory transport with a queue and explicit pumping.
+- **Messages:** `StartMatch`, `Propose`, `Confirmed` (move, move number, `PositionKey.Value` after applying it), `Rejected`, `Ack` (move number and the client's key), `RematchRequest`, `Desync`. Moves travel, never the board.
+- **Inbound buffer:** whatever arrives before the device's flow opens the channel (`Open`) is stored and delivered on opening. It covers the case of a `StartMatch` the host sends as soon as the client connects, before the join has finished on the client side. (Since 2026-10-06 the start no longer depends on this buffer: see the `Ready` handshake below.)
 
-### Autoridad y sincronización
+### Authority and sync
 
-- **El host es la autoridad** (`OnlineMatch`, en Game). Toda propuesta, sea un toque en el host o un mensaje del cliente, pasa por la misma validación: `RulesEngine.IsLegal` más "cada dispositivo solo mueve su símbolo". Una propuesta ilegal se rechaza y ningún estado cambia.
-- **En ambos dispositivos `GameManager` solo recibe jugadas confirmadas**, a través del controller de cada lado: `OnlineLocalPlayer` (el humano de este dispositivo, que propone y espera) o `RemotePlayer`. `GameManager` no sabe que hay red.
-- **Comparación de hash:** el host manda su `PositionKey.Value` con cada confirmación. El cliente aplica, compara y devuelve un `Ack` con su clave, y el host también compara. Ante cualquier diferencia: `Debug.LogError`, `Desync` al otro lado, se cierra la sesión y ambos vuelven al menú. Nunca se sigue jugando desincronizados.
-- ~~**Arranque:** lo dispara la conexión de Netcode (`OnClientConnectedCallback` en el host), no el join de lobby, porque antes de eso no se pueden mandar mensajes.~~ Reemplazado por el handshake `Ready` (ver "Handshake de arranque y versión de protocolo").
-- **Símbolos:** el host es siempre X y el cliente siempre O (GDD §3.1). La revancha requiere el pedido de los dos; el host la anuncia con `StartMatch` invirtiendo quién empieza.
-- ~~Pendiente (iteración 3): si una propuesta del cliente no recibe `Confirmed` ni `Rejected` (host caído), `OnlineLocalPlayer` queda esperando con el input bloqueado.~~ Resuelto en la iteración 3 (ver abajo).
+- **The host is the authority** (`OnlineMatch`, in Game). Every proposal, whether a tap on the host or a message from the client, goes through the same validation: `RulesEngine.IsLegal` plus "each device only moves its own symbol". An illegal proposal is rejected and no state changes.
+- **On both devices `GameManager` only receives confirmed moves**, through each side's controller: `OnlineLocalPlayer` (this device's human, who proposes and waits) or `RemotePlayer`. `GameManager` doesn't know there is a network.
+- **Hash comparison:** the host sends its `PositionKey.Value` with each confirmation. The client applies, compares and returns an `Ack` with its key, and the host compares too. On any difference: `Debug.LogError`, `Desync` to the other side, the session is closed and both go back to the menu. Never keep playing out of sync.
+- ~~**Start:** it is triggered by the Netcode connection (`OnClientConnectedCallback` on the host), not by the lobby join, because messages can't be sent before that.~~ Replaced by the `Ready` handshake (see "Start handshake and protocol version").
+- **Symbols:** the host is always X and the client always O (GDD §3.1). The rematch requires both to ask; the host announces it with `StartMatch`, swapping who starts.
+- ~~Pending (iteration 3): if a client proposal gets neither `Confirmed` nor `Rejected` (host down), `OnlineLocalPlayer` stays waiting with the input locked.~~ Solved in iteration 3 (see below).
 
-## Implementación (actualizado 2026-09-23, online iteración 3: timer, abandono y desconexiones)
+## Implementation (updated 2026-09-23, online iteration 3: timer, abandonment and disconnections)
 
-- **Timer autoritativo del host:** al empezar cada turno el host fija el vencimiento y lo anuncia con `TurnTimer` (jugador, duración en ms, quién está ausente). El cliente solo muestra la cuenta regresiva desde que recibe el aviso, sin compensar latencia; nunca decide un vencimiento. Al vencer, el host elige la jugada automática y la difunde como un `Confirmed` más, así que el cliente no necesita lógica aparte para aplicarla.
-- **Tiempo y azar inyectados** (`IClock`, `IRandomSource`, en Game): `OnlineMatch` no lee el reloj de Unity ni `System.Random` directamente. `MatchFlow` lo avanza con `Tick()` una vez por frame. Los tests usan un reloj manual.
-- **Parámetros:** los del timer (`OnlineTimerConfig`: 30 s, 10 s, 3 vencimientos) son de juego, viven en Game y se editan en `GameConfigAsset`. El Core no los tiene, porque el `RulesEngine` nunca los lee (CLAUDE.md regla 6, reescrita en esta iteración). Las esperas de red (`OnlineNetworkSettings`: 10 s sin respuesta a una propuesta, 2 s para el ack de "Salir", 5 s de gracia tras una desconexión) son `SerializeField` de `MatchFlow`.
-- **Abandono como resultado de partida, no regla del tablero:** `MatchResult` (Game) envuelve el `GameEndedEvent` del Core o un abandono con su causa (`Timeouts`, `Quit`, `Disconnected`). `GameManager.Halt()` congela la partida sin tocar el `GameState`. El Core no cambió.
-- **Mensajes nuevos** (mismo mensaje con nombre, `ReliableSequenced`): `TurnTimer`, `Abandoned` (perdedor y causa, host → cliente), `Forfeit` y `ForfeitAck` (en ambos sentidos). `MatchMessage` suma `DurationMs`, `AbsentFlags` y `Cause`.
-- **"Salir" con confirmación:** quien sale manda `Forfeit` y espera `ForfeitAck` (hasta 2 s) antes de cerrar la sesión. Si la cerrara enseguida, el apagado de la red podría descartar el aviso. Sin ack, cierra igual y el otro lado cae en el caso de desconexión.
-- **Detección de desconexión:** `IMatchTransport.PeerDisconnected`, que en `NgoMatchTransport` sale de `OnClientDisconnectCallback`. También cuentan los eventos de sesión (`PlayerHasLeft` en el host, `Deleted`/`RemovedFromSession` en el cliente). Los dos caminos terminan en `OnlineMatch.NotifyPeerGone()`, que es idempotente.
-  - Cliente caído en partida: el host espera una gracia de 5 s y después el cliente pierde por abandono. Los 3 vencimientos quedan para el rival conectado que no juega.
-  - Host caído en partida, o propuesta sin respuesta en 10 s: el cliente vuelve al menú con "Se perdió la conexión con el rival".
+- **Host-authoritative timer:** at the start of each turn the host sets the deadline and announces it with `TurnTimer` (player, duration in ms, who is absent). The client only shows the countdown from when it receives the notice, without compensating for latency; it never decides a timeout. On expiry, the host picks the automatic move and broadcasts it as one more `Confirmed`, so the client needs no separate logic to apply it.
+- **Injected time and randomness** (`IClock`, `IRandomSource`, in Game): `OnlineMatch` doesn't read Unity's clock or `System.Random` directly. `MatchFlow` advances it with `Tick()` once per frame. The tests use a manual clock.
+- **Parameters:** the timer ones (`OnlineTimerConfig`: 30 s, 10 s, 3 timeouts) are game parameters, live in Game and are edited in `GameConfigAsset`. The Core doesn't have them, because the `RulesEngine` never reads them (CLAUDE.md rule 6, rewritten in this iteration). The network waits (`OnlineNetworkSettings`: 10 s without an answer to a proposal, 2 s for the "Salir" ack, 5 s of grace after a disconnection) are `SerializeField`s of `MatchFlow`.
+- **Abandonment as a match result, not a board rule:** `MatchResult` (Game) wraps the Core's `GameEndedEvent` or an abandonment with its cause (`Timeouts`, `Quit`, `Disconnected`). `GameManager.Halt()` freezes the match without touching the `GameState`. The Core didn't change.
+- **New messages** (same named message, `ReliableSequenced`): `TurnTimer`, `Abandoned` (loser and cause, host → client), `Forfeit` and `ForfeitAck` (in both directions). `MatchMessage` adds `DurationMs`, `AbsentFlags` and `Cause`.
+- **"Salir" with confirmation:** whoever leaves sends `Forfeit` and waits for `ForfeitAck` (up to 2 s) before closing the session. If it closed right away, the network shutdown could discard the notice. Without an ack, it closes anyway and the other side falls into the disconnection case.
+- **Disconnection detection:** `IMatchTransport.PeerDisconnected`, which in `NgoMatchTransport` comes from `OnClientDisconnectCallback`. The session events also count (`PlayerHasLeft` on the host, `Deleted`/`RemovedFromSession` on the client). Both paths end in `OnlineMatch.NotifyPeerGone()`, which is idempotent.
+  - Client down mid-match: the host waits a 5 s grace and then the client loses by abandonment. The 3 timeouts are left for the connected opponent who doesn't play.
+  - Host down mid-match, or a proposal without an answer in 10 s: the client goes back to the menu with "Se perdió la conexión con el rival".
 
-## Implementación (actualizado 2026-10-06: handshake de arranque y versión de protocolo)
+## Implementation (updated 2026-10-06: start handshake and protocol version)
 
-**Contexto:** en dos pruebas con celulares, el cliente se quedó en la sala de espera mientras al host le arrancaba la partida (ai-log [15]). Después no se reprodujo y la causa no se confirmó. En vez de seguir buscándola, se cambió el arranque para que esa clase de fallo no pueda dejar a un lado esperando para siempre (ai-log [16]).
+**Context:** in two tests with phones, the client stayed in the waiting room while the match started on the host (ai-log [15]). Afterwards it didn't reproduce and the cause wasn't confirmed. Instead of continuing to look for it, the start was changed so that this class of failure can't leave one side waiting forever (ai-log [16]).
 
-- **Handshake `Ready`:** el host ya no arranca con la conexión de Netcode.
-  - El cliente manda `Ready` cuando su flujo está listo (`OnlineMatch.Start`) y lo reenvía cada 1 s (`OnlineNetworkSettings.ReadyResendIntervalSeconds`, `SerializeField` de `MatchFlow`) hasta aceptar el primer `StartMatch`.
-  - El host arranca la primera partida con el primer `Ready`. A cada `Ready` posterior le contesta reenviando el `StartMatch` actual, y nunca arranca otra partida por eso. Así, un `StartMatch` perdido se recupera con el siguiente `Ready`.
-  - Se quitaron `IMatchTransport.PeerConnected` e `IsPeerConnected`, que quedaron sin uso.
-- **Número de partida:** `StartMatch` lleva `MatchNumber`, un campo propio que vale 1 en la primera partida y suma 1 en cada revancha. El cliente acepta solo el número que espera y descarta cualquier `StartMatch` repetido o anterior. Una sola regla cubre el `Ready` duplicado, el reenvío y un `StartMatch` viejo que llega tarde después de una revancha, sin depender de cuándo se limpia un flag.
-- **Timer en el reenvío:** si la partida está en curso, el reenvío incluye un `TurnTimer` con el **tiempo restante según el reloj del host**, no la duración completa. Si no, el cliente vería más tiempo del que tiene y el host le cortaría el turno antes de que su cuenta llegue a cero.
-- **`Ready` sin conexión:** el cliente puede mandar `Ready` antes de que Netcode haya conectado, sobre todo en un arranque en frío. `CustomMessagingManager.SendNamedMessage` no chequea la conexión (NGO 2.13.3), así que `NgoMatchTransport.Send` no lo llama mientras `!IsConnectedClient`. Descarta el `Ready` en silencio, con un log de diagnóstico apagado por defecto, y el reenvío se ocupa del resto. Los demás mensajes mantienen el warning de siempre.
-- **Formato de trama** (`MatchMessageCodec`, en Game, compartido por `NgoMatchTransport` y el transporte en memoria de los tests):
-  - empieza con una cabecera fija que no cambia nunca: `kind`(1) + versión de protocolo(2), seguida de los campos;
-  - mide 31 bytes en total;
-  - los valores de `MatchMessageKind` son parte del protocolo y no se renumeran.
-- **Versión de protocolo:** `MatchMessageCodec.ProtocolVersion = 1` (es la primera versión con número).
-  - Toda trama la lleva en la cabecera. En la práctica, la primera que se chequea es el `Ready` del cliente.
-  - Si no coincide, se decodifica solo la cabecera, sin importar el tamaño, y los dos lados vuelven al menú con "El rival tiene otra versión del juego".
-  - El host manda `VersionMismatch` y espera la respuesta del cliente (o su caída, o a lo sumo 2 s) antes de cerrar, para que el cliente vea ese mensaje y no "La sala se cerró". El cliente contesta y se va enseguida.
-- **Lectura tolerante:** el decodificador nunca lanza. Descarta con un warning ("dropped malformed match message") una trama más corta que la cabecera, un `kind` desconocido o una trama de la misma versión con tamaño inesperado. Reemplaza la lectura campo por campo que tiraba `OverflowException` con mensajes de otro tamaño.
-- **Compatibilidad:** los builds anteriores (sin versión ni `Ready`) **no** son compatibles. Un host nuevo con un cliente viejo se queda esperando en la sala, porque nunca le llega un `Ready`. Desde la versión 1, cualquier cambio de formato o de significado sube `ProtocolVersion`.
+- **`Ready` handshake:** the host no longer starts on the Netcode connection.
+  - The client sends `Ready` when its flow is ready (`OnlineMatch.Start`) and resends it every 1 s (`OnlineNetworkSettings.ReadyResendIntervalSeconds`, a `SerializeField` of `MatchFlow`) until it accepts the first `StartMatch`.
+  - The host starts the first match with the first `Ready`. To every later `Ready` it answers by resending the current `StartMatch`, and it never starts another match because of that. That way, a lost `StartMatch` is recovered with the next `Ready`.
+  - `IMatchTransport.PeerConnected` and `IsPeerConnected` were removed, as they ended up unused.
+- **Match number:** `StartMatch` carries `MatchNumber`, a field of its own that is 1 in the first match and adds 1 on each rematch. The client accepts only the number it expects and discards any repeated or earlier `StartMatch`. A single rule covers the duplicated `Ready`, the resend and an old `StartMatch` arriving late after a rematch, without depending on when a flag is cleared.
+- **Timer on the resend:** if the match is in progress, the resend includes a `TurnTimer` with the **remaining time according to the host's clock**, not the full duration. Otherwise, the client would see more time than it has and the host would cut its turn before its countdown reaches zero.
+- **`Ready` without connection:** the client can send `Ready` before Netcode has connected, especially on a cold start. `CustomMessagingManager.SendNamedMessage` doesn't check the connection (NGO 2.13.3), so `NgoMatchTransport.Send` doesn't call it while `!IsConnectedClient`. It silently drops the `Ready`, with a diagnostic log off by default, and the resend takes care of the rest. The other messages keep the usual warning.
+- **Frame format** (`MatchMessageCodec`, in Game, shared by `NgoMatchTransport` and the tests' in-memory transport):
+  - it starts with a fixed header that never changes: `kind`(1) + protocol version(2), followed by the fields;
+  - it is 31 bytes in total;
+  - the `MatchMessageKind` values are part of the protocol and are not renumbered.
+- **Protocol version:** `MatchMessageCodec.ProtocolVersion = 1` (it is the first version with a number).
+  - Every frame carries it in the header. In practice, the first one checked is the client's `Ready`.
+  - If it doesn't match, only the header is decoded, regardless of the size, and both sides go back to the menu with "El rival tiene otra versión del juego".
+  - The host sends `VersionMismatch` and waits for the client's answer (or its drop, or at most 2 s) before closing, so the client sees that message and not "La sala se cerró". The client answers and leaves right away.
+- **Tolerant reading:** the decoder never throws. It discards with a warning ("dropped malformed match message") a frame shorter than the header, an unknown `kind` or a frame of the same version with an unexpected size. It replaces the field-by-field reading that threw `OverflowException` with messages of another size.
+- **Compatibility:** previous builds (without version or `Ready`) are **not** compatible. A new host with an old client stays waiting in the room, because a `Ready` never reaches it. From version 1 on, any change of format or meaning bumps `ProtocolVersion`.
 
-## Referencias
+## References
 
 - https://docs.unity.com/ugs/en-us/manual/mps-sdk/manual/join-session
 - https://docs.unity.com/mps-sdk/working-with-mps

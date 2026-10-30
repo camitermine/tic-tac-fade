@@ -1,32 +1,32 @@
-# ADR 0003 — Abstracción de jugadores vía IPlayerController
+# ADR 0003 — Player abstraction via IPlayerController
 
-**Estado:** Aceptada
-**Fecha:** 2026-09-23
+**Status:** Accepted
+**Date:** 2026-09-23
 
-## Contexto
+## Context
 
-Hasta ahora `GameManager.OnCellClicked(int)` asumía dos cosas: que toda jugada viene de un toque de la UI, y que el jugador que la hace es siempre `CurrentState.CurrentPlayer` — construía el `Move` directamente ahí mismo. Eso funciona para el modo local (dos humanos en el mismo dispositivo), pero bloquea todo lo que necesita una fuente de jugadas distinta: el online (`docs/adr/0002-online-multiplayer-services.md`, donde las jugadas del rival llegan por red) y la IA del roadmap (GDD §8.2).
+Until now `GameManager.OnCellClicked(int)` assumed two things: that every move comes from a UI tap, and that the player making it is always `CurrentState.CurrentPlayer` — it built the `Move` right there. That works for local mode (two humans on the same device), but it blocks everything that needs a different source of moves: online (`docs/adr/0002-online-multiplayer-services.md`, where the opponent's moves arrive over the network) and the roadmap AI (GDD §8.2).
 
-CLAUDE.md ya declaraba esta regla como no negociable (arquitectura, regla 5: "Players are interchangeable through `IPlayerController`... The match code must never branch on the player type"), pero no estaba implementada.
+CLAUDE.md already declared this rule as non-negotiable (architecture, rule 5: "Players are interchangeable through `IPlayerController`... The match code must never branch on the player type"), but it wasn't implemented.
 
-## Decisión
+## Decision
 
-- `IPlayerController` (capa Game) es la única fuente de jugadas que `GameManager` conoce: expone `Player`, un evento `MoveChosen` y dos hooks, `NotifyTurnStarted(GameState)` (para que un controller autónomo pueda actuar sin intervención externa) y `NotifyCellSelected(int)` (para que la UI le pueda seguir hablando a `GameManager.OnCellClicked` exactamente igual que antes, sin saber qué tipo de controller hay del otro lado).
-- `LocalHumanPlayer` es la primera implementación: no hace nada en `NotifyTurnStarted` (espera el toque), y traduce `NotifyCellSelected` en un `Move` disparando `MoveChosen`.
-- `GameManager` recibe los dos controllers vía `Initialize(IPlayerController, IPlayerController)`, público y re-llamable (desuscribe los anteriores antes de suscribir los nuevos). Si nadie lo llamó antes de `Awake()`, `GameManager` crea el par `LocalHumanPlayer` por default — así el modo local sigue funcionando sin wiring extra, y un test (o a futuro un flujo de setup online/IA) puede inyectar otra cosa.
-- Los controllers **no se wirean desde el scene builder**: un campo de tipo interfaz con un `event` no sobrevive la serialización de Unity (no es un `UnityEngine.Object`), así que intentar asignarlos por reflection al construir la escena se perdería en cuanto se guarda/recarga. Por eso viven enteramente en código C# (`Awake()`/`Initialize()`), no en el `.unity`.
-- El avance de turnos (`GameManager.AdvanceTurns`) es un bucle con flag de re-entrada, no una llamada recursiva. La primera versión notificaba el turno siguiente llamando directo desde dentro del manejo de la jugada anterior — con dos controllers autónomos eso apila un frame de stack por jugada de toda la partida, y una jugada rechazada que no corta el ciclo produce recursión infinita (StackOverflow, cuelga el Editor sin excepción capturable). El bucle re-entrante hace que una partida completa entre dos controllers autónomos corra en un solo stack frame, y una jugada rechazada (`MoveRejectedEvent`) corta el bucle en vez de reintentar.
+- `IPlayerController` (Game layer) is the only source of moves `GameManager` knows: it exposes `Player`, a `MoveChosen` event and two hooks, `NotifyTurnStarted(GameState)` (so an autonomous controller can act without outside intervention) and `NotifyCellSelected(int)` (so the UI can keep talking to `GameManager.OnCellClicked` exactly as before, without knowing what type of controller is on the other side).
+- `LocalHumanPlayer` is the first implementation: it does nothing in `NotifyTurnStarted` (it waits for the tap), and translates `NotifyCellSelected` into a `Move` by raising `MoveChosen`.
+- `GameManager` receives the two controllers via `Initialize(IPlayerController, IPlayerController)`, public and re-callable (it unsubscribes the previous ones before subscribing the new ones). If nobody called it before `Awake()`, `GameManager` creates the default `LocalHumanPlayer` pair — that way local mode keeps working with no extra wiring, and a test (or, in the future, an online/AI setup flow) can inject something else.
+- The controllers **are not wired from the scene builder**: an interface-typed field with an `event` doesn't survive Unity serialization (it isn't a `UnityEngine.Object`), so trying to assign them by reflection when building the scene would be lost as soon as it is saved/reloaded. That's why they live entirely in C# code (`Awake()`/`Initialize()`), not in the `.unity`.
+- Turn advancing (`GameManager.AdvanceTurns`) is a loop with a re-entrancy flag, not a recursive call. The first version notified the next turn by calling directly from inside the handling of the previous move — with two autonomous controllers that stacks one stack frame per move for the whole match, and a rejected move that doesn't break the cycle produces infinite recursion (StackOverflow, hangs the Editor with no catchable exception). The re-entrant loop makes a full match between two autonomous controllers run in a single stack frame, and a rejected move (`MoveRejectedEvent`) breaks the loop instead of retrying.
 
-## Consecuencias
+## Consequences
 
-**A favor:**
+**For:**
 
-- `GameManager` nunca hace `if (controller is LocalHumanPlayer)`: agregar `RemotePlayer`/`AIPlayer` no toca su código, solo implementa la interfaz.
-- El modo local sigue andando sin cambios de configuración (default en `Awake()`).
-- Se puede testear una partida completa sin UI ni escena real más que el `GameManager`: dos controllers fake alcanzan (ver `FakeAutoPlayer` en `Assets/_Project/Tests/PlayMode/`).
-- La UI (`BoardView`, `GameHud`, `RestartButton`) no cambió una sola línea: siguen llamando `OnCellClicked`/`StartNewGame`/leyendo `CurrentState` exactamente igual.
+- `GameManager` never does `if (controller is LocalHumanPlayer)`: adding `RemotePlayer`/`AIPlayer` doesn't touch its code, it only implements the interface.
+- Local mode keeps working with no configuration changes (default in `Awake()`).
+- A full match can be tested with no UI or real scene beyond the `GameManager`: two fake controllers are enough (see `FakeAutoPlayer` in `Assets/_Project/Tests/PlayMode/`).
+- The UI (`BoardView`, `GameHud`, `RestartButton`) didn't change a single line: they keep calling `OnCellClicked`/`StartNewGame`/reading `CurrentState` exactly the same.
 
-**En contra:**
+**Against:**
 
-- El punto de inyección (`Initialize`) es manual: no hay todavía un mecanismo de UI/Editor para elegir "Local vs Local" / "Local vs IA" antes de tiempo de ejecución. Se resuelve cuando exista ese flujo (online o IA).
-- `GameConfigAsset` (el wrapper ScriptableObject de `GameConfig`, ya decidido en ADR 0001) no valida rangos de sus campos en el Inspector — deuda anotada, no bloqueante para el MVP.
+- The injection point (`Initialize`) is manual: there is no UI/Editor mechanism yet to choose "Local vs Local" / "Local vs AI" ahead of run time. It gets solved when that flow exists (online or AI).
+- `GameConfigAsset` (the ScriptableObject wrapper of `GameConfig`, already decided in ADR 0001) doesn't validate the ranges of its fields in the Inspector — noted debt, not blocking for the MVP.

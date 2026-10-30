@@ -1,10 +1,10 @@
-Iteración de UI, parte 2: feedback visual del tablero (GDD §4.1 y §3.7).
+UI iteration, part 2: visual feedback on the board (GDD §4.1 and §3.7).
 
-Indicador de vida en cada ficha, para las de ambos jugadores. Vida = BufferSize − fichas colocadas después por ese jugador. Vida 3: opacidad plena. Vida 2: opacidad media. Vida 1: además de la transparencia, una marca visible (contorno o ícono) — el GDD es explícito en no depender solo de la opacidad, porque en pantalla al sol no se distingue.
-Separar el aviso de desvanecimiento del contador: su propio elemento, no concatenado en el mismo Text. Cancela la deuda anotada en la entrada [5] del ai-log.
-Ghost piece con confirmación en dos toques: el primer toque selecciona la celda y previsualiza el tablero resultante (ficha nueva puesta y ficha que se va marcada); un segundo toque en la misma celda confirma; tocar otra celda cambia la selección.
-Resaltado de la línea ganadora al terminar la partida.
+Life indicator on each piece, for both players' pieces. Life = BufferSize − pieces placed afterwards by that player. Life 3: full opacity. Life 2: medium opacity. Life 1: on top of the transparency, a visible mark (outline or icon) — the GDD is explicit about not relying only on opacity, because on a screen in the sun it can't be told apart.
+Separate the fade warning from the counter: its own element, not concatenated into the same Text. It pays off the debt noted in entry [5] of the ai-log.
+Ghost piece with two-tap confirmation: the first tap selects the cell and previews the resulting board (new piece placed and the piece that goes marked); a second tap on the same cell confirms; tapping another cell changes the selection.
+Winning line highlight at the end of the match.
 
-El Core no se toca: toda la información necesaria ya está en GameState y en los eventos. Si detectás que falta algo en el Core, paralo y avisá antes de agregarlo.
+The Core is not touched: all the needed information is already in GameState and in the events. If you find that something is missing in the Core, stop and tell before adding it.
 
-Verificación: Simulator en 16:9 y 20:9, partida completa incluyendo una victoria, y captura de los tres estados de vida visibles a la vez.
+Verification: Simulator in 16:9 and 20:9, full match including a win, and a capture of the three life states visible at the same time.

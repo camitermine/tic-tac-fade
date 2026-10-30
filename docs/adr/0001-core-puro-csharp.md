@@ -1,36 +1,36 @@
-# ADR 0001 — Reglas del juego en un Core de C# puro
+# ADR 0001 — Game rules in a pure C# Core
 
-**Estado:** Aceptada
-**Fecha:** 2026-09-22
+**Status:** Accepted
+**Date:** 2026-09-22
 
-## Contexto
+## Context
 
-El prototipo inicial mezcla lógica de juego y presentación. Esa lógica tiene que servir, sin cambios, para varios usos:
+The initial prototype mixes game logic and presentation. That logic has to serve, unchanged, several uses:
 
-- el modo local en un dispositivo;
-- el online, donde ambos clientes validan las mismas jugadas;
-- una IA y un solver futuros, que necesitan simular miles de estados por segundo;
-- los modificadores roguelike del roadmap.
+- local mode on one device;
+- online, where both clients validate the same moves;
+- a future AI and solver, which need to simulate thousands of states per second;
+- the roguelike modifiers on the roadmap.
 
-Si las reglas viven en `MonoBehaviour`, cada uno de esos usos obliga a instanciar escenas y objetos de Unity, y los tests se vuelven lentos y frágiles.
+If the rules live in `MonoBehaviour`, each of those uses forces instantiating Unity scenes and objects, and the tests become slow and fragile.
 
-## Decisión
+## Decision
 
-- Todas las reglas viven en el assembly `TicTacFade.Core`, con `noEngineReferences: true` en su asmdef.
-- El estado del juego es inmutable: `RulesEngine.Apply(state, move) → (newState, events)`.
-- Los parámetros (tamaño de tablero, tamaño de buffer, largo de línea, límites de empate, timers) se reciben por `GameConfig`, una clase de C# puro. La capa `Game` la expone como ScriptableObject para poder editarla desde el Editor.
-- El Core expone un hash de posición, usado tanto para la regla de empate por repetición como para detectar desincronización en el online.
+- All rules live in the `TicTacFade.Core` assembly, with `noEngineReferences: true` in its asmdef.
+- The game state is immutable: `RulesEngine.Apply(state, move) → (newState, events)`.
+- The parameters (board size, buffer size, line length, draw limits, timers) come in through `GameConfig`, a pure C# class. The `Game` layer exposes it as a ScriptableObject so it can be edited from the Editor.
+- The Core exposes a position hash, used both for the draw-by-repetition rule and to detect desync online.
 
-## Consecuencias
+## Consequences
 
-**A favor:**
+**For:**
 
-- Tests EditMode rápidos, sin escenas ni Play Mode.
-- El compilador impide acoplar Unity a las reglas: no depende de la disciplina de quien escribe, ni humano ni agente.
-- La IA, el solver y el online reutilizan exactamente el mismo código de reglas.
-- El 4x4 y los cambios de buffer son cambios de configuración, no de código.
+- Fast EditMode tests, with no scenes or Play Mode.
+- The compiler prevents coupling Unity to the rules: it doesn't depend on the discipline of whoever writes the code, human or agent.
+- The AI, the solver and online reuse exactly the same rules code.
+- 4x4 and buffer changes are configuration changes, not code changes.
 
-**En contra:**
+**Against:**
 
-- Hace falta una capa de mapeo entre el estado y las vistas, o sea algo de código "puente".
-- Los estados inmutables generan asignaciones de memoria. Es irrelevante en 3x3, y si el solver lo necesita se optimiza ahí (por ejemplo, con una representación empaquetada en un entero).
+- A mapping layer between the state and the views is needed, that is, some "bridge" code.
+- Immutable states generate memory allocations. It's irrelevant in 3x3, and if the solver needs it, it is optimized there (for example, with a representation packed into an integer).

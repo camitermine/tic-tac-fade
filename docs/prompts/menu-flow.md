@@ -1,15 +1,15 @@
-Menú y flujo de pantallas, con partida local completa.
+Menu and screen flow, with a complete local match.
 
-Objetivo: que el juego deje de arrancar directo en el tablero y tenga el flujo del GDD §4.3: Menú principal → Partida → Resultado → (Revancha | Menú). Las opciones de sala online todavía no existen; el menú por ahora tiene solo "Jugar local" y queda preparado para sumarlas.
+Goal: the game stops starting straight on the board and gets the flow from GDD §4.3: Main menu → Match → Result → (Rematch | Menu). The online room options don't exist yet; for now the menu only has "Jugar local" and is ready to add them.
 
-Máquina de estados de flujo en la capa Game, con los estados Menu, Playing y Result. Ninguna lógica de pantalla dentro de GameManager: él sigue ocupándose solo de la partida.
-Pantalla de menú: título y botón "Jugar local". Preparada para dos botones más (crear sala, unirse con código) sin rehacer el layout.
-Pantalla de resultado: quién ganó o si fue empate, con el motivo (línea, repetición o tope de jugadas), más botones "Revancha" y "Menú". Reemplaza al banner actual de fin de partida.
-Revancha alternando quién empieza, según el GDD §3.1. La primera partida arranca X; cada revancha invierte.
-Todo en vertical, respetando la safe area, con la misma disciplina de layout groups de la parte 1 de UI. Sin posiciones fijas en píxeles.
+Flow state machine in the Game layer, with the states Menu, Playing and Result. No screen logic inside GameManager: it keeps dealing only with the match.
+Menu screen: title and "Jugar local" button. Ready for two more buttons (create room, join with code) without redoing the layout.
+Result screen: who won or whether it was a draw, with the reason (line, repetition or move cap), plus "Revancha" and "Menú" buttons. It replaces the current end-of-match banner.
+Rematch alternating who starts, per GDD §3.1. The first match starts with X; each rematch swaps.
+Everything in portrait, respecting the safe area, with the same layout-group discipline as UI part 1. No fixed pixel positions.
 
-El Core no se toca. El scene builder tiene que seguir siendo idempotente y construir las pantallas nuevas.
+The Core is not touched. The scene builder must stay idempotent and build the new screens.
 
-Verificación: tests EditMode y PlayMode en verde, más un PlayMode test nuevo que recorra el flujo completo (menú → jugar → terminar la partida → revancha → verificar que el jugador inicial se invirtió). Simulator en los dos perfiles de siempre. Además, el HUD tiene que quedar verificado fuera del punch-hole en un device real, no solo en el Simulator — es justo la clase de bug que el Simulator no reproduce igual que el hardware (ver issue conocido en el ai-log).
+Verification: EditMode and PlayMode tests green, plus a new PlayMode test that walks the full flow (menu → play → finish the match → rematch → verify that the starting player was swapped). Simulator in the usual two profiles. Also, the HUD must be verified outside the punch-hole on a real device, not only in the Simulator — it is exactly the kind of bug the Simulator doesn't reproduce the same way as the hardware (see the known issue in the ai-log).
 
-Documentación: entrada en ai-log, y actualizar el GDD §4.3 si el flujo termina difiriendo de lo escrito.
+Documentation: ai-log entry, and update GDD §4.3 if the flow ends up differing from what is written.

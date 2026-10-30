@@ -1,36 +1,36 @@
-Modo contra la IA (GDD §8.2), usando la tabla del solver (ADR 0004).
+Vs-AI mode (GDD §8.2), using the solver table (ADR 0004).
 
-Decisiones de diseño (Cami):
+Design decisions (Cami):
 
-Empieza el humano en la primera partida contra la IA; cada revancha alterna, como en el resto del juego (GDD §3.1).
-Tres niveles: Fácil, Normal y Perfecta. Todos parten de la tabla del solver. Cada nivel tiene una probabilidad de error: con esa probabilidad elige una jugada legal al azar en vez de la mejor. Valores iniciales en el asset de configuración (por ejemplo, Fácil 50 %, Normal 20 %, Perfecta 0 %), para ajustar jugando. Normal y Perfecta siempre toman una victoria inmediata si existe; Fácil puede dejarla pasar.
-La IA espera un tiempo corto y variable antes de jugar (alrededor de 1 s), configurable. Cero en los tests.
+The human starts the first match against the AI; each rematch alternates, as in the rest of the game (GDD §3.1).
+Three levels: Fácil (Easy), Normal and Perfecta (Perfect). All of them start from the solver table. Each level has an error chance: with that chance it picks a random legal move instead of the best one. Starting values in the configuration asset (for example, Fácil 50 %, Normal 20 %, Perfecta 0 %), to be tuned by playing. Normal and Perfecta always take an immediate win if there is one; Fácil can let it pass.
+The AI waits a short, variable time before playing (around 1 s), configurable. Zero in the tests.
 
-Fase 1 — la IA, sin UI:
+Phase 1 — the AI, without UI:
 
-Tabla precalculada como asset binario compacto (posición → resultado y distancia), generada desde el solver con un menú del Editor y referenciada por un campo serializado, no desde Resources. El cálculo nunca corre durante una partida (ADR 0004). Un test de categoría Slow regenera la tabla y la compara con el asset, para que no se desincronice de las reglas.
-AIPlayer en la capa Game, implementa IPlayerController con IsLocalHuman = false. Actualizá en el CLAUDE.md la dirección de dependencias: Game → Solver → Core.
-Evaluación efectiva de cada jugada, no solo el valor crudo de la tabla:
-una jugada que lleva a una posición que ya apareció dos veces en la partida es empate inmediato por repetición;
-una victoria que no llega antes de MaxTotalMoves vale empate, y una derrota que no llega antes del tope también;
-perdiendo, la IA prefiere cualquier camino al empate (repetición o tope) antes que la derrota; ganando, evita los empates por repetición.
-La demora no puede bloquear ni romper el bucle de turnos del GameManager: verificá que funciona con un controller que responde más tarde, y que una demora pendiente se cancela si la partida termina o el jugador sale.
+Precalculated table as a compact binary asset (position → result and distance), generated from the solver with an Editor menu and referenced by a serialized field, not from Resources. The computation never runs during a match (ADR 0004). A Slow category test regenerates the table and compares it with the asset, so it doesn't get out of sync with the rules.
+AIPlayer in the Game layer, implements IPlayerController with IsLocalHuman = false. Update the dependency direction in CLAUDE.md: Game → Solver → Core.
+Effective evaluation of each move, not only the raw table value:
+a move that leads to a position that already appeared twice in the match is an immediate draw by repetition;
+a win that doesn't arrive before MaxTotalMoves counts as a draw, and so does a loss that doesn't arrive before the cap;
+when losing, the AI prefers any path to a draw (repetition or cap) over the loss; when winning, it avoids draws by repetition.
+The delay must not block or break the GameManager's turn loop: verify that it works with a controller that answers later, and that a pending delay is cancelled if the match ends or the player leaves.
 
-Tests EditMode/PlayMode de la fase 1, con azar y reloj inyectados:
+Phase 1 EditMode/PlayMode tests, with injected randomness and clock:
 
-la IA nunca elige una jugada ilegal;
-Perfecta contra Perfecta: gana quien empieza, en 13 jugadas;
-Perfecta empezando contra un oponente al azar: gana siempre, en muchas partidas con semillas distintas;
-perdiendo, Perfecta elige la repetición o el tope cuando están disponibles; ganando, evita la tercera repetición;
-cada nivel aplica su probabilidad de error de forma determinística con el azar inyectado.
+the AI never picks an illegal move;
+Perfecta against Perfecta: whoever starts wins, in 13 moves;
+Perfecta starting against a random opponent: always wins, over many matches with different seeds;
+when losing, Perfecta picks the repetition or the cap when they are available; when winning, it avoids the third repetition;
+each level applies its error chance deterministically with the injected randomness.
 
-Pará al terminar la fase 1 y reportá antes de seguir.
+Stop when phase 1 is done and report before continuing.
 
-Fase 2 — UI:
+Phase 2 — UI:
 
-Menú: botón “Jugar contra la IA” → elección de nivel (tres botones) → partida. Estados nuevos al final del enum de flujo, con valores explícitos, y cada uno con su “volver” definido.
-HUD: “Tu turno” / “Turno de la IA”. Sin timer, como en local.
-Resultado con revancha (alternando quién empieza) y volver al menú.
-PlayMode test del flujo completo: menú → nivel → partida → resultado → revancha.
+Menu: “Jugar contra la IA” button → level choice (three buttons) → match. New states at the end of the flow enum, with explicit values, and each one with its “volver” defined.
+HUD: “Tu turno” / “Turno de la IA”. No timer, as in local.
+Result with rematch (alternating who starts) and back to the menu.
+PlayMode test of the full flow: menu → level → match → result → rematch.
 
-Documentación: ADR 0005 (IA: evaluación efectiva, niveles, asset precalculado), GDD §8.2 con el diseño final, CLAUDE.md, ai-log.
+Documentation: ADR 0005 (AI: effective evaluation, levels, precalculated asset), GDD §8.2 with the final design, CLAUDE.md, ai-log.

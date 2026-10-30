@@ -1,26 +1,26 @@
-Online, iteración 2: partida jugable entre dos dispositivos.
+Online, iteration 2: playable match between two devices.
 
-Objetivo: cuando el rival se conecta a la sala, la partida arranca sola en ambos dispositivos y se juega completa por red hasta el resultado, con revancha. Timer de turno, desconexiones en medio de partida y abandono quedan para la iteración 3.
+Goal: when the opponent connects to the room, the match starts on its own on both devices and is played to the result over the network, with rematch. Turn timer, disconnections mid-match and abandonment are left for iteration 3.
 
-Modelo de autoridad (no negociable, ver ADR 0002):
+Authority model (non-negotiable, see ADR 0002):
 
-El host es la autoridad. El cliente nunca aplica su propia jugada: la envía al host, el host la valida con RulesEngine.IsLegal y, si es legal, la difunde a ambos.
-En los dos dispositivos, el GameManager solo recibe jugadas confirmadas por el host. Así los dos aplican exactamente la misma secuencia.
-El rival es un IPlayerController más (RemotePlayer), que dispara MoveChosen cuando llega una jugada confirmada. El GameManager no sabe que hay red.
-Después de cada jugada, ambos lados comparan el hash de posición del Core. Si no coinciden: log de error claro, se corta la partida y ambos vuelven al menú con un mensaje. Nunca seguir jugando desincronizados.
+The host is the authority. The client never applies its own move: it sends it to the host, the host validates it with RulesEngine.IsLegal and, if it is legal, broadcasts it to both.
+On both devices, the GameManager only receives moves confirmed by the host. That way both apply exactly the same sequence.
+The opponent is one more IPlayerController (RemotePlayer), which raises MoveChosen when a confirmed move arrives. The GameManager doesn't know there is a network.
+After each move, both sides compare the Core's position hash. If they don't match: a clear error log, the match is cut and both go back to the menu with a message. Never keep playing out of sync.
 
-Reglas de juego online (GDD §3.1): el host es siempre X y el cliente siempre O. La primera partida arranca X; cada revancha alterna quién empieza, sin cambiar los símbolos.
+Online game rules (GDD §3.1): the host is always X and the client always O. The first match starts with X; each rematch alternates who starts, without changing the symbols.
 
-Transporte de jugadas sobre Netcode for GameObjects, dentro de TicTacFade.Net. Evaluá entre RPCs sobre un NetworkObject y mensajes con nombre (CustomMessagingManager), que no requieren spawnear objetos ni registrar prefabs; elegí uno y justificalo en el plan. Por la red viajan jugadas (Move), nunca el tablero.
-El tablero solo acepta input cuando es tu turno. El HUD pasa a decir "Tu turno" / "Turno del rival" en online (en local sigue como está). Mientras el host no confirma una jugada, la celda no puede tocarse dos veces.
-Resultado online: la revancha requiere que ambos la pidan; quien la pidió ve "Esperando al rival...". Si uno elige "Menú", la sesión se cierra y el otro vuelve al menú con el mensaje "El rival salió".
-El botón "Salir" en medio de una partida online, por ahora, hace lo mismo: cierra la sesión y ambos vuelven al menú. Que cuente como derrota es de la iteración 3.
+Move transport over Netcode for GameObjects, inside TicTacFade.Net. Evaluate RPCs on a NetworkObject versus named messages (CustomMessagingManager), which don't require spawning objects or registering prefabs; pick one and justify it in the plan. Moves (Move) travel over the network, never the board.
+The board only accepts input when it is your turn. The HUD says "Tu turno" / "Turno del rival" online (local stays as it is). While the host hasn't confirmed a move, the cell can't be tapped twice.
+Online result: the rematch requires both to ask for it; whoever asked sees "Esperando al rival...". If one picks "Menú", the session closes and the other goes back to the menu with the message "El rival salió".
+The "Salir" button in the middle of an online match, for now, does the same: it closes the session and both go back to the menu. Counting it as a loss belongs to iteration 3.
 
 Tests:
 
-Un test sin red real: dos GameManager conectados por un transporte falso en memoria, uno como host y otro como cliente, jugando una partida completa. Verificar que al final ambos estados son idénticos, y que una jugada ilegal del cliente es rechazada por el host sin que ninguno de los dos cambie de estado.
-Los tests existentes siguen en verde, incluido el modo local sin cambios.
+A test with no real network: two GameManagers connected by a fake in-memory transport, one as host and the other as client, playing a full match. Verify that at the end both states are identical, and that an illegal client move is rejected by the host without either of them changing state.
+The existing tests stay green, including local mode unchanged.
 
-Verificación manual: con dos dispositivos reales, partida completa hasta ganar, revancha (arranca O), empate por repetición si se puede forzar, y "Menú" desde el resultado en uno de los dos.
+Manual verification: with two real devices, full match until a win, rematch (O starts), draw by repetition if it can be forced, and "Menú" from the result on one of the two.
 
-Documentación: ai-log, ADR 0002 con la decisión de transporte, y GDD §5 si algo del modelo de red cambia.
+Documentation: ai-log, ADR 0002 with the transport decision, and GDD §5 if something in the network model changes.
