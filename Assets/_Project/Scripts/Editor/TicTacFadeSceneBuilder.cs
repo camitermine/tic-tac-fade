@@ -2,6 +2,7 @@ using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.EventSystems;
+using UnityEngine.Rendering;
 using UnityEngine.Rendering.Universal;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
@@ -21,12 +22,25 @@ namespace TicTacFade.EditorTools
         const string GameConfigAssetPath = "Assets/_Project/Config/GameConfig.asset";
         const string AITableAssetPath = SolverTableGenerator.AssetPath;
 
+        // Neon art pass (GDD §6): sprites are the SVG sources imported as Textured
+        // Sprites; the material lifts them above 1 so URP Bloom only catches them.
+        const string NeonFolder = "Assets/_Project/Art/Neon";
+        const string NeonXSpritePath = NeonFolder + "/Source/neon_x.svg";
+        const string NeonOSpritePath = NeonFolder + "/Source/neon_o.svg";
+        const string NeonGridLineSpritePath = NeonFolder + "/Source/neon_grid_line.svg";
+        const string NeonShaderPath = NeonFolder + "/UI-Neon.shader";
+        const string NeonMaterialPath = NeonFolder + "/NeonUI.mat";
+        const string NeonVolumeProfilePath = NeonFolder + "/NeonVolumeProfile.asset";
+        static readonly Color NeonBackground = new Color32(0x0B, 0x10, 0x26, 0xFF); // #0B1026
+        static readonly Color NeonGridColor = new Color32(0x22, 0xE6, 0xF0, 0xFF);  // the grid glows cyan, like the X
+
         [MenuItem("Tic-Tac-Fade/Build Placeholder Scene (1v1)")]
         public static void BuildScene()
         {
             var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
 
-            CreateMainCamera();
+            var mainCamera = CreateMainCamera();
+            CreatePostProcessVolume();
 
             var eventSystemGO = new GameObject("EventSystem", typeof(EventSystem));
 #if ENABLE_INPUT_SYSTEM
@@ -37,7 +51,12 @@ namespace TicTacFade.EditorTools
 
             var canvasGO = new GameObject("Canvas", typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
             var canvas = canvasGO.GetComponent<Canvas>();
-            canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+            // Screen Space - Camera, not Overlay: URP post-processing (Bloom) only
+            // reaches a canvas the camera renders (GDD §6). The GraphicRaycaster
+            // uses this camera as its event camera.
+            canvas.renderMode = RenderMode.ScreenSpaceCamera;
+            canvas.worldCamera = mainCamera;
+            canvas.planeDistance = 10f;
             var scaler = canvasGO.GetComponent<CanvasScaler>();
             scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
             scaler.referenceResolution = new Vector2(1080, 1920);
@@ -102,7 +121,7 @@ namespace TicTacFade.EditorTools
             return asset;
         }
 
-        static void CreateMainCamera()
+        static Camera CreateMainCamera()
         {
             var cameraGO = new GameObject("Main Camera", typeof(Camera), typeof(AudioListener));
             cameraGO.tag = "MainCamera";
@@ -110,13 +129,71 @@ namespace TicTacFade.EditorTools
             var camera = cameraGO.GetComponent<Camera>();
             camera.orthographic = true;
             camera.clearFlags = CameraClearFlags.SolidColor;
-            camera.backgroundColor = new Color(0.05f, 0.05f, 0.08f); // near-black, keeps the neon cell colors readable
+            camera.backgroundColor = NeonBackground;
+            camera.allowHDR = true; // values above 1 from the neon material must survive until Bloom
 
-            // The Canvas is ScreenSpaceOverlay, so this camera isn't required to render
-            // the UI, but its absence is exactly what produces "No cameras rendering"
-            // and the black Game view background.
-            if (cameraGO.GetComponent<UniversalAdditionalCameraData>() == null)
-                cameraGO.AddComponent<UniversalAdditionalCameraData>();
+            // The Canvas renders through this camera (Screen Space - Camera), so
+            // its post-processing is what applies Bloom to the UI.
+            var cameraData = cameraGO.GetComponent<UniversalAdditionalCameraData>();
+            if (cameraData == null)
+                cameraData = cameraGO.AddComponent<UniversalAdditionalCameraData>();
+            cameraData.renderPostProcessing = true;
+            return camera;
+        }
+
+        /// <summary>
+        /// Global Volume with Bloom. Threshold 1: only the neon material goes
+        /// above 1, so white text and buttons stay out of the glow (raise it a
+        /// little, e.g. 1.1, if they ever bleed; don't darken the UI). The
+        /// profile asset is created once and then kept, so tuning it in the
+        /// Inspector survives a scene rebuild.
+        /// </summary>
+        static void CreatePostProcessVolume()
+        {
+            var profile = AssetDatabase.LoadAssetAtPath<VolumeProfile>(NeonVolumeProfilePath);
+            if (profile == null)
+            {
+                profile = ScriptableObject.CreateInstance<VolumeProfile>();
+                AssetDatabase.CreateAsset(profile, NeonVolumeProfilePath);
+                var bloom = profile.Add<Bloom>(overrides: true);
+                bloom.threshold.value = 1f;
+                bloom.intensity.value = 1.5f;
+                bloom.scatter.value = 0.7f;
+                bloom.highQualityFiltering.value = false; // mobile
+                bloom.name = "Bloom";
+                AssetDatabase.AddObjectToAsset(bloom, profile);
+                AssetDatabase.SaveAssets();
+            }
+
+            var volumeGO = new GameObject("PostProcessVolume");
+            var volume = volumeGO.AddComponent<Volume>();
+            volume.isGlobal = true;
+            volume.sharedProfile = profile;
+        }
+
+        static Material GetOrCreateNeonMaterial()
+        {
+            var existing = AssetDatabase.LoadAssetAtPath<Material>(NeonMaterialPath);
+            if (existing != null)
+                return existing;
+
+            var material = new Material(AssetDatabase.LoadAssetAtPath<Shader>(NeonShaderPath));
+            material.SetFloat("_Intensity", 2.5f);
+            AssetDatabase.CreateAsset(material, NeonMaterialPath);
+            AssetDatabase.SaveAssets();
+            return material;
+        }
+
+        // The sprite generated by the SVG importer (Textured Sprite) inside the .svg asset.
+        static Sprite LoadNeonSprite(string svgPath)
+        {
+            foreach (var asset in AssetDatabase.LoadAllAssetsAtPath(svgPath))
+            {
+                if (asset is Sprite sprite)
+                    return sprite;
+            }
+            Debug.LogError($"Tic-Tac-Fade: no sprite in {svgPath}; it must be imported as a Textured Sprite.");
+            return null;
         }
 
         /// <summary>
@@ -434,25 +511,68 @@ namespace TicTacFade.EditorTools
             grid.constraint = GridLayoutGroup.Constraint.FixedColumnCount;
             grid.constraintCount = 3;
 
+            var neonMaterial = GetOrCreateNeonMaterial();
+            CreateGridLines(panelRT, neonMaterial, cellSize: 150f, spacing: 10f);
+
+            var xSprite = LoadNeonSprite(NeonXSpritePath);
+            var oSprite = LoadNeonSprite(NeonOSpritePath);
             cells = new CellView[9];
             for (int i = 0; i < 9; i++)
-                cells[i] = CreateCell(panelRT, i);
+                cells[i] = CreateCell(panelRT, i, neonMaterial, xSprite, oSprite);
 
             return panelRT;
         }
 
-        static CellView CreateCell(Transform parent, int index)
+        /// <summary>
+        /// The 4 neon lines between the cells, created first so they draw under
+        /// the pieces. They ignore the GridLayoutGroup and sit on the cell
+        /// boundaries. 9-sliced: the left/right borders hold the round caps, and
+        /// pixelsPerUnitMultiplier scales the borders with the thickness so the
+        /// caps stay round on a line thinner than the sprite.
+        /// </summary>
+        static void CreateGridLines(RectTransform board, Material neonMaterial, float cellSize, float spacing)
+        {
+            var sprite = LoadNeonSprite(NeonGridLineSpritePath);
+            const float thickness = 32f; // rect height; the stroke inside is a quarter of it
+            float length = 3 * cellSize + 2 * spacing;
+            float offset = (cellSize + spacing) / 2f;
+
+            var positions = new[] { -offset, offset };
+            for (int i = 0; i < 4; i++)
+            {
+                bool vertical = i >= 2;
+                var rt = CreateUIObject(vertical ? $"GridLineV_{i - 2}" : $"GridLineH_{i}", board, typeof(Image), typeof(LayoutElement));
+                rt.GetComponent<LayoutElement>().ignoreLayout = true;
+                rt.anchorMin = rt.anchorMax = rt.pivot = new Vector2(0.5f, 0.5f);
+                rt.sizeDelta = new Vector2(length, thickness);
+                rt.anchoredPosition = vertical ? new Vector2(positions[i - 2], 0f) : new Vector2(0f, positions[i]);
+                rt.localRotation = vertical ? Quaternion.Euler(0f, 0f, 90f) : Quaternion.identity;
+
+                var image = rt.GetComponent<Image>();
+                image.sprite = sprite;
+                image.type = Image.Type.Sliced;
+                image.pixelsPerUnitMultiplier = sprite.rect.height / thickness;
+                image.material = neonMaterial;
+                image.color = NeonGridColor;
+                image.raycastTarget = false;
+            }
+        }
+
+        static CellView CreateCell(Transform parent, int index, Material neonMaterial, Sprite xSprite, Sprite oSprite)
         {
             var rt = CreateUIObject($"Cell_{index}", parent, typeof(Image), typeof(Button));
             var background = rt.GetComponent<Image>();
             background.sprite = AssetDatabase.GetBuiltinExtraResource<Sprite>("UI/Skin/UISprite.psd");
             background.type = Image.Type.Sliced;
-            background.color = new Color(1f, 1f, 1f, 0.06f);
+            background.color = new Color(1f, 1f, 1f, 0f); // invisible: the grid lines frame the cell, this only catches taps
 
-            var labelRT = CreateUIObject("Label", rt, typeof(Text));
-            StretchFull(labelRT);
-            var label = labelRT.GetComponent<Text>();
-            ConfigureText(label, 72, TextAnchor.MiddleCenter, Color.white);
+            var pieceRT = CreateUIObject("Piece", rt, typeof(Image));
+            StretchFull(pieceRT);
+            var piece = pieceRT.GetComponent<Image>();
+            piece.material = neonMaterial;
+            piece.preserveAspect = true;
+            piece.raycastTarget = false;
+            piece.enabled = false; // sprite and tint set by CellView.SetOccupant()
 
             var criticalRT = CreateUIObject("CriticalMark", rt, typeof(Image));
             criticalRT.anchorMin = criticalRT.anchorMax = new Vector2(1f, 1f);
@@ -469,9 +589,9 @@ namespace TicTacFade.EditorTools
             var ghostRT = CreateUIObject("GhostOverlay", rt, typeof(Image));
             StretchFull(ghostRT);
             var ghostOverlay = ghostRT.GetComponent<Image>();
-            ghostOverlay.sprite = AssetDatabase.GetBuiltinExtraResource<Sprite>("UI/Skin/UISprite.psd");
-            ghostOverlay.type = Image.Type.Sliced;
-            ghostOverlay.color = new Color(1f, 1f, 1f, 0f); // real color/alpha set by ShowGhost()
+            ghostOverlay.material = neonMaterial;
+            ghostOverlay.preserveAspect = true;
+            ghostOverlay.color = new Color(1f, 1f, 1f, 0f); // real sprite/color/alpha set by ShowGhost()
             ghostOverlay.raycastTarget = false;
             ghostOverlay.enabled = false;
 
@@ -485,7 +605,9 @@ namespace TicTacFade.EditorTools
             highlight.enabled = false;
 
             var cellView = rt.gameObject.AddComponent<CellView>();
-            SetPrivateField(cellView, "label", label);
+            SetPrivateField(cellView, "piece", piece);
+            SetPrivateField(cellView, "xSprite", xSprite);
+            SetPrivateField(cellView, "oSprite", oSprite);
             SetPrivateField(cellView, "background", background);
             SetPrivateField(cellView, "highlightBorder", highlight);
             SetPrivateField(cellView, "criticalMark", criticalMark);

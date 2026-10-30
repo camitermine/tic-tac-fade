@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Neon grid line: a horizontal capsule, white, round caps, no glow. Used as a 9-sliced
+     sprite (64 px borders on the left and right cover the caps), rotated for vertical lines. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="64" viewBox="0 0 512 64">
+  <line x1="32" y1="32" x2="480" y2="32" fill="none" stroke="#FFFFFF" stroke-width="16" stroke-linecap="round"/>
+</svg>

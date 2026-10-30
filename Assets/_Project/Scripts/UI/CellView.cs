@@ -10,15 +10,20 @@ namespace TicTacFade.UI
     {
         public event Action<int> Clicked;
 
-        [SerializeField] Text label;
+        // The piece and the ghost are white neon sprites tinted here; their
+        // material (TicTacFade/UI Neon) lifts them above 1 so URP Bloom makes
+        // them glow (GDD §6). The background only catches taps.
+        [SerializeField] Image piece;
+        [SerializeField] Sprite xSprite;
+        [SerializeField] Sprite oSprite;
         [SerializeField] Image background;
         [SerializeField] Image highlightBorder;
         [SerializeField] Image criticalMark;
         [SerializeField] Image ghostOverlay;
 
-        static readonly Color XColor = new Color(0.13f, 0.95f, 0.95f);      // placeholder neon cyan
-        static readonly Color OColor = new Color(1f, 0.2f, 0.6f);           // placeholder neon magenta
-        static readonly Color EmptyColor = new Color(1f, 1f, 1f, 0.06f);
+        static readonly Color XColor = new Color32(0x22, 0xE6, 0xF0, 0xFF); // neon cyan #22E6F0
+        static readonly Color OColor = new Color32(0xFF, 0x3B, 0xD4, 0xFF); // neon magenta #FF3BD4
+        static readonly Color EmptyColor = new Color(1f, 1f, 1f, 0f);       // invisible, still a raycast target
 
         const float GhostAlpha = 0.4f;
         const float GhostVictimAlpha = 0.12f;  // below the life==1 tier: the piece FIFO would remove by this specific move
@@ -44,9 +49,9 @@ namespace TicTacFade.UI
             if (currentOccupant == Occupant.None || currentLife != 2 || isGhostVictim)
                 return;
 
-            Color c = background.color;
+            Color c = piece.color;
             c.a = Life2PulseBase + Mathf.Sin(Time.time * Life2PulseSpeed) * Life2PulseAmplitude;
-            background.color = c;
+            piece.color = c;
         }
 
         public void Init(int index)
@@ -59,7 +64,7 @@ namespace TicTacFade.UI
             currentOccupant = Occupant.None;
             currentLife = 0;
             isGhostVictim = false;
-            label.text = string.Empty;
+            piece.enabled = false;
             background.color = EmptyColor;
             SetHighlighted(false);
             if (criticalMark != null)
@@ -72,11 +77,12 @@ namespace TicTacFade.UI
             currentOccupant = occupant;
             currentLife = life;
             isGhostVictim = false;
-            label.text = occupant == Occupant.X ? "X" : "O";
-            Color playerColor = occupant == Occupant.X ? XColor : OColor;
+            piece.sprite = SpriteFor(occupant);
+            piece.enabled = true;
+            Color playerColor = ColorFor(occupant);
             Color c = playerColor;
             c.a = LifeToAlpha(life);
-            background.color = c;
+            piece.color = c;
             if (criticalMark != null)
             {
                 criticalMark.enabled = life == 1;
@@ -100,8 +106,9 @@ namespace TicTacFade.UI
         public void ShowGhost(Occupant player)
         {
             if (ghostOverlay == null) return;
-            Color c = player == Occupant.X ? XColor : OColor;
+            Color c = ColorFor(player);
             c.a = GhostAlpha;
+            ghostOverlay.sprite = SpriteFor(player);
             ghostOverlay.color = c;
             ghostOverlay.enabled = true;
         }
@@ -122,10 +129,14 @@ namespace TicTacFade.UI
         {
             if (currentOccupant == Occupant.None) return;
             isGhostVictim = active;
-            Color c = background.color;
+            Color c = piece.color;
             c.a = active ? GhostVictimAlpha : LifeToAlpha(currentLife);
-            background.color = c;
+            piece.color = c;
         }
+
+        Sprite SpriteFor(Occupant player) => player == Occupant.X ? xSprite : oSprite;
+
+        static Color ColorFor(Occupant player) => player == Occupant.X ? XColor : OColor;
 
         static float LifeToAlpha(int life)
         {
