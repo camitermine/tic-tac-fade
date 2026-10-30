@@ -1,7 +1,7 @@
 # GDD: Tic-Tac-Fade
 
-**Version:** 0.12
-**Status:** MVP v0.1.0
+**Version:** 0.13
+**Status:** v0.2.0 — MVP plus play against the AI
 **Date:** October 2026
 **Source of truth:** this file (`docs/GDD.md`). Any external mirror (Google Docs) is secondary.
 
@@ -23,6 +23,7 @@
 | 0.10 | Oct 2026 | Solver solved (§8.1): with perfect play, whoever starts has a forced win in 13 moves (plies) if they open on an edge; corner or center don't force a win. 116,074 reachable positions; the cap of 40 doesn't cut any forced line from the start. Verified by an independent solver in Python (`tools/verify_solver.py`). |
 | 0.11 | Oct 2026 | Vs-AI mode (§8.2): levels Fácil (Easy) / Normal / Perfecta (Perfect) on the solver table, evaluation with repetition history and cap, delay before playing, the human starts the first match and the rematch alternates. Flow: Menu → level choice → Match → Result (§4.3). |
 | 0.12 | Oct 2026 | Documentation translated from Spanish to English, with no change of content; the game's text stays in Spanish. Roadmap: "Localization" item (§8). |
+| 0.13 | Oct 2026 | Status: the game is v0.2.0, the MVP plus play against the AI (§8.2). The GDD version stays independent of the game version. |
 
 ---
 

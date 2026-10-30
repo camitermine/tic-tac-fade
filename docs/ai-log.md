@@ -1089,6 +1089,8 @@ After the adjustments: compiles with no errors, PlayMode 106/106 (filtered by as
 - The `ProjectSettings.asset` diff has exactly those two fields (`bundleVersion`, `AndroidBundleVersionCode`).
 - No build was run.
 
+**Follow-up (Cami):** the GDD header was stale ("MVP v0.1.0"). It now reads "Status: v0.2.0 — MVP plus play against the AI", with GDD version 0.13 and its row in the version history.
+
 **Learnings:** keeping the version in the configurator's constants makes the bump a one-line change and a two-field diff.
 
 **Commit(s):** this commit (`chore: bump version to 0.2.0`).
