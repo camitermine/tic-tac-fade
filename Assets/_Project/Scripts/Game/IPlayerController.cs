@@ -6,7 +6,7 @@ namespace TicTacFade.Game
     /// <summary>
     /// A source of moves for one player slot (X or O). GameManager never
     /// branches on the concrete type: LocalHumanPlayer, OnlineLocalPlayer,
-    /// RemotePlayer and later AIPlayer are all driven through this same
+    /// RemotePlayer and AIPlayer are all driven through this same
     /// surface (CLAUDE.md, architecture rule 5).
     /// </summary>
     public interface IPlayerController
@@ -31,6 +31,14 @@ namespace TicTacFade.Game
 
         /// <summary>GameManager calls this when it becomes this controller's turn.</summary>
         void NotifyTurnStarted(GameState state);
+
+        /// <summary>
+        /// GameManager calls this whenever the match stops: it ends, is
+        /// discarded or halted, a new one starts, or the controllers are
+        /// replaced. A controller that answers later (the AI's delay) drops
+        /// its pending move here.
+        /// </summary>
+        void NotifyMatchStopped();
 
         /// <summary>
         /// Routes a raw board-cell tap from the UI. No-ops for controllers

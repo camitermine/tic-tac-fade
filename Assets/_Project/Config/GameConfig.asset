@@ -17,3 +17,17 @@ MonoBehaviour:
   winLength: 3
   maxTotalMoves: 40
   repetitionLimit: 3
+  turnTimeSeconds: 30
+  absentTurnTimeSeconds: 10
+  maxConsecutiveTimeouts: 3
+  easyErrorPercent: 50
+  easyAlwaysTakesImmediateWin: 0
+  easyBlocksImmediateLoss: 0
+  normalErrorPercent: 20
+  normalAlwaysTakesImmediateWin: 1
+  normalBlocksImmediateLoss: 1
+  perfectErrorPercent: 0
+  perfectAlwaysTakesImmediateWin: 1
+  perfectBlocksImmediateLoss: 1
+  aiMinDelaySeconds: 0.6
+  aiMaxDelaySeconds: 1.4

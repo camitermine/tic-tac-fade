@@ -23,20 +23,21 @@ The project owner, Cami, is an experienced Unity/C# developer who supervises eve
 Assets/_Project/
   Scripts/
     Core/        TicTacFade.Core        pure C#, noEngineReferences = true
+    Solver/      TicTacFade.Solver      pure C#, retrograde solver and the AI's compact table
     Game/        TicTacFade.Game        match flow, player controllers, state machine
     Net/         TicTacFade.Net         Multiplayer Services sessions, move sync
     UI/          TicTacFade.UI          views, input, HUD
   Tests/
     EditMode/    TicTacFade.Core.Tests  NUnit tests for Core
-    PlayMode/    TicTacFade.PlayModeTests  scene wiring, flow, online (fakes + in-memory transport)
+    PlayMode/    TicTacFade.PlayModeTests  scene wiring, flow, online, AI (fakes + in-memory transport)
   Scenes/ Prefabs/ Config/ Art/ Audio/
 ```
 
 1. **Core has zero Unity dependencies.** Its asmdef has `noEngineReferences: true`. All rules live here: board, FIFO queues, move validation, win check, draw rules, and the position hash.
-2. **Dependency direction:** `UI → Game → Core` and `Net → Game → Core`. Core depends on nothing. UI never talks to Net directly.
+2. **Dependency direction:** `UI → Game → Core`, `Net → Game → Core` and `Game → Solver → Core`. Core depends on nothing and knows nothing about the solver. UI never talks to Net directly.
 3. **The game state is immutable.** `RulesEngine.Apply(state, move)` returns a new state plus the resulting events. No hidden mutation.
 4. **Moves are commands.** A `Move` is the only thing sent over the network. Both peers run the same Core rules.
-5. **Players are interchangeable** through `IPlayerController` (`LocalHumanPlayer`, `RemotePlayer`, and later `AIPlayer`). The match code must never branch on the player type.
+5. **Players are interchangeable** through `IPlayerController` (`LocalHumanPlayer`, `OnlineLocalPlayer`, `RemotePlayer` and `AIPlayer`). The match code must never branch on the player type.
 6. **Parameters are configurable, never hardcoded.** Board rules (board size, buffer size, win length, draw limits) come from `GameConfig`, a plain C# class in Core. Match-level parameters the rules engine never reads (online turn timers, timeouts) live in the Game layer. Both are edited through `GameConfigAsset`. Core only holds what Core uses. The win check must be generic (N in a row on an NxN board).
 7. **Core communicates outward through events** (e.g. `PiecePlaced`, `PieceFaded`, `GameEnded`). UI observes; it does not poll or own rules.
 8. **No premature abstraction.** Use a pattern only when it solves a current problem or an item already on the GDD roadmap. No DI framework for the MVP.
@@ -60,7 +61,13 @@ Assets/_Project/
     & "<UnityEditorPath>\Unity.exe" -batchmode -projectPath . -runTests -testPlatform EditMode -testResults ./TestResults/editmode.xml
     ```
 - Run the Slow category tests whenever the Core or the Solver is touched.
-- If `run_tests` for PlayMode via MCP reports 0 tests run, do not count it as a pass: force a recompile and retry; if it persists, Cami runs the suite from the Editor's Test Runner. Root cause not determined.
+- If `run_tests` via MCP reports 0 tests run or "failed to initialize", in **EditMode or PlayMode**, do not count it as a pass. Retry in this order:
+  1. Force a recompile (`refresh_unity` with `compile: request`, `mode: force`) and retry filtered by assembly (`assembly_names: ["TicTacFade.Core.Tests"]` or `["TicTacFade.PlayModeTests"]`).
+  2. Retry with a longer `init_timeout` (120000 ms).
+  3. If it still runs nothing, Cami runs the suite from the Editor's Test Runner.
+
+  Both modes hit it during the AI work: PlayMode passed on step 1, EditMode on step 2 (right after a PlayMode run). Root cause not determined.
+- Copy the `job_id` exactly from the `run_tests` result when polling `get_test_job`; a mistyped id returns "Unknown job_id", which says nothing about the tests.
 - A task is **not done** until:
   - the project compiles with no console errors (check via MCP), and
   - the tests pass.

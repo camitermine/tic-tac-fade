@@ -31,6 +31,8 @@ namespace TicTacFade.Game
 
         public void NotifyTurnStarted(GameState state) { } // waits for a tap
 
+        public void NotifyMatchStopped() { } // OnlineMatch calls Reset when a new match starts
+
         public void NotifyCellSelected(int cellIndex)
         {
             if (_awaitingConfirmation)

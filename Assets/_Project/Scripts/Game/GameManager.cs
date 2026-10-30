@@ -41,6 +41,12 @@ namespace TicTacFade.Game
         /// <summary>Online turn-timer parameters, edited in the same asset as the board rules.</summary>
         public OnlineTimerConfig OnlineTimerConfig => config.ToOnlineTimerConfig();
 
+        /// <summary>AI levels and delay, edited in the same asset as the board rules.</summary>
+        public AIConfig AIConfig => config.ToAIConfig();
+
+        /// <summary>The board rules every match uses (also before the first one starts).</summary>
+        public GameConfig Rules => config.ToGameConfig();
+
         /// <summary>
         /// Whether a board tap on this device can play right now: a match in
         /// progress and the current side's controller taking input.
@@ -59,6 +65,7 @@ namespace TicTacFade.Game
         /// </summary>
         public void Initialize(IPlayerController playerX, IPlayerController playerO)
         {
+            StopControllers();
             Unsubscribe(_playerX);
             Unsubscribe(_playerO);
 
@@ -99,6 +106,7 @@ namespace TicTacFade.Game
         /// </summary>
         public void StartNewGame(Occupant startingPlayer)
         {
+            StopControllers();
             IsHalted = false;
             CurrentState = GameState.CreateInitial(config.ToGameConfig(), startingPlayer);
             StateChanged?.Invoke(CurrentState);
@@ -112,6 +120,7 @@ namespace TicTacFade.Game
         /// </summary>
         public void DiscardMatch()
         {
+            StopControllers();
             CurrentState = null;
             IsHalted = false;
         }
@@ -125,7 +134,17 @@ namespace TicTacFade.Game
         {
             if (IsHalted) return;
             IsHalted = true;
+            StopControllers();
             LocalInputAvailabilityChanged?.Invoke();
+        }
+
+        // Every path that stops a match goes through here, so a controller
+        // that answers later (the AI's delay) never plays into a stopped or
+        // different match.
+        void StopControllers()
+        {
+            _playerX?.NotifyMatchStopped();
+            _playerO?.NotifyMatchStopped();
         }
 
         /// <summary>
@@ -151,6 +170,13 @@ namespace TicTacFade.Game
                 Debug.LogWarning($"Tic-Tac-Fade: move {move.Player}@{move.CellIndex} ignored, the match is halted.");
                 return;
             }
+            // Second safety net behind NotifyMatchStopped: a late move with
+            // no match in progress is dropped, never applied.
+            if (CurrentState == null || CurrentState.IsOver)
+            {
+                Debug.LogWarning($"Tic-Tac-Fade: move {move.Player}@{move.CellIndex} ignored, no match in progress.");
+                return;
+            }
             ApplyMove(move);
             AdvanceTurns();
         }
@@ -170,6 +196,8 @@ namespace TicTacFade.Game
             }
 
             CurrentState = newState;
+            if (CurrentState.IsOver)
+                StopControllers();
 
             foreach (var evt in events)
                 if (evt is GameEndedEvent ended)

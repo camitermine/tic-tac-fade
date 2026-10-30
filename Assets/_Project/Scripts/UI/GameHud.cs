@@ -70,7 +70,8 @@ namespace TicTacFade.UI
         }
 
         // Local (both sides human on this device): who moves by symbol.
-        // Online (one human here): from this player's point of view.
+        // Online or against the AI (one human here): from this player's
+        // point of view.
         void SetTurn(Occupant player)
         {
             if (flow.IsOnline && flow.IsBusy && flow.State == FlowState.Playing)
@@ -83,7 +84,7 @@ namespace TicTacFade.UI
             bool oHuman = gameManager.IsLocalHuman(Occupant.O);
 
             if (xHuman != oHuman)
-                turnLabel.text = gameManager.IsLocalHuman(player) ? "Tu turno" : "Turno del rival";
+                turnLabel.text = gameManager.IsLocalHuman(player) ? "Tu turno" : flow.IsVsAI ? "Turno de la IA" : "Turno del rival";
             else
                 turnLabel.text = $"Turno: Jugador {(player == Occupant.X ? "X" : "O")}";
         }

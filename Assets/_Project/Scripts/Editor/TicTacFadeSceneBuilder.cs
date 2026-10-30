@@ -19,6 +19,7 @@ namespace TicTacFade.EditorTools
     {
         const string ScenePath = "Assets/_Project/Scenes/TicTacFadeGame.unity";
         const string GameConfigAssetPath = "Assets/_Project/Config/GameConfig.asset";
+        const string AITableAssetPath = SolverTableGenerator.AssetPath;
 
         [MenuItem("Tic-Tac-Fade/Build Placeholder Scene (1v1)")]
         public static void BuildScene()
@@ -56,6 +57,10 @@ namespace TicTacFade.EditorTools
             SetPrivateField(matchFlow, "gameManager", gameManager);
             SetPrivateField(matchFlow, "sessionService", sessionService);
             SetPrivateField(matchFlow, "matchTransport", matchTransport);
+            var aiTable = AssetDatabase.LoadAssetAtPath<TextAsset>(AITableAssetPath);
+            if (aiTable == null)
+                Debug.LogError($"Tic-Tac-Fade: {AITableAssetPath} not found. Run Tic-Tac-Fade/Solver/Generate AI table, then rebuild the scene.");
+            SetPrivateField(matchFlow, "aiTable", aiTable);
 
             // Sibling order = draw order. Hidden screens don't block input
             // (FlowScreenVisibility turns off blocksRaycasts).
@@ -64,6 +69,7 @@ namespace TicTacFade.EditorTools
             CreateMenuScreen(canvasGO.transform, matchFlow);
             CreateLobbyScreen(canvasGO.transform, matchFlow);
             CreateJoinByCodeScreen(canvasGO.transform, matchFlow);
+            CreateAILevelScreen(canvasGO.transform, matchFlow);
 
             EditorSceneManager.SaveScene(scene, ScenePath);
 
@@ -219,6 +225,7 @@ namespace TicTacFade.EditorTools
             buttonsRT.GetComponent<LayoutElement>().flexibleWidth = 1f; // nested layout group: see CountsRow in CreateHud
 
             var playLocalButton = CreateButton("PlayLocalButton", buttonsRT, "Jugar local", 48, new Color(0.13f, 0.95f, 0.95f), Color.black, 130f);
+            var playVsAIButton = CreateButton("PlayVsAIButton", buttonsRT, "Jugar contra la IA", 48, new Color(0.6f, 0.45f, 1f), Color.black, 130f);
             var createRoomButton = CreateButton("CreateRoomButton", buttonsRT, "Crear sala", 48, new Color(1f, 0.2f, 0.6f), Color.black, 130f);
             var joinByCodeButton = CreateButton("JoinByCodeButton", buttonsRT, "Unirse con código", 48, new Color(1f, 1f, 1f, 0.15f), Color.white, 130f);
 
@@ -228,6 +235,7 @@ namespace TicTacFade.EditorTools
             var menuScreen = screenRT.gameObject.AddComponent<MenuScreen>();
             SetPrivateField(menuScreen, "flow", flow);
             SetPrivateField(menuScreen, "playLocalButton", playLocalButton);
+            SetPrivateField(menuScreen, "playVsAIButton", playVsAIButton);
             SetPrivateField(menuScreen, "createRoomButton", createRoomButton);
             SetPrivateField(menuScreen, "joinByCodeButton", joinByCodeButton);
             SetPrivateField(menuScreen, "statusLabel", statusLabel);
@@ -271,6 +279,26 @@ namespace TicTacFade.EditorTools
             SetPrivateField(joinScreen, "joinButton", joinButton);
             SetPrivateField(joinScreen, "cancelButton", cancelButton);
             SetPrivateField(joinScreen, "statusLabel", statusLabel);
+        }
+
+        static void CreateAILevelScreen(Transform parent, MatchFlow flow)
+        {
+            var screenRT = CreateSafeAreaScreen("AILevelScreen", parent, flow, FlowState.AILevelSelect);
+            var layoutRT = CreateCenteredColumn("AILevelLayout", screenRT, 48f);
+
+            CreateLabel("AILevelTitle", layoutRT, "Jugar contra la IA", 56, Color.white, 100f);
+            CreateLabel("AILevelSubtitle", layoutRT, "Elegí la dificultad", 40, new Color(1f, 1f, 1f, 0.7f), 70f);
+            var easyButton = CreateButton("AIEasyButton", layoutRT, "Fácil", 48, new Color(0.13f, 0.95f, 0.95f), Color.black, 130f);
+            var normalButton = CreateButton("AINormalButton", layoutRT, "Normal", 48, new Color(0.6f, 0.45f, 1f), Color.black, 130f);
+            var perfectButton = CreateButton("AIPerfectButton", layoutRT, "Perfecta", 48, new Color(1f, 0.2f, 0.6f), Color.black, 130f);
+            var backButton = CreateButton("AILevelBackButton", layoutRT, "Volver", 40, new Color(1f, 1f, 1f, 0.15f), Color.white, 110f);
+
+            var levelScreen = screenRT.gameObject.AddComponent<AILevelScreen>();
+            SetPrivateField(levelScreen, "flow", flow);
+            SetPrivateField(levelScreen, "easyButton", easyButton);
+            SetPrivateField(levelScreen, "normalButton", normalButton);
+            SetPrivateField(levelScreen, "perfectButton", perfectButton);
+            SetPrivateField(levelScreen, "backButton", backButton);
         }
 
         static InputField CreateCodeInput(Transform parent)

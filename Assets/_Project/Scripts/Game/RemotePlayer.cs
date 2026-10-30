@@ -22,6 +22,8 @@ namespace TicTacFade.Game
 
         public void NotifyTurnStarted(GameState state) { } // the move arrives through the network
 
+        public void NotifyMatchStopped() { } // OnlineMatch owns what is in flight
+
         public void NotifyCellSelected(int cellIndex) { } // taps never drive the opponent
 
         public void ApplyConfirmed(Move move) => MoveChosen?.Invoke(move);

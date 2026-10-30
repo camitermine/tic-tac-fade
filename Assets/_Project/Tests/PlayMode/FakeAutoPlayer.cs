@@ -21,6 +21,8 @@ namespace TicTacFade.PlayModeTests
 
         public void NotifyTurnStarted(GameState state) => MoveChosen?.Invoke(new Move(Player, state.GetFreeCellIndices()[0]));
 
+        public void NotifyMatchStopped() { } // plays synchronously, nothing pending
+
         public void NotifyCellSelected(int cellIndex) { } // autonomous, ignores UI input
     }
 }

@@ -2,7 +2,8 @@
     "name": "TicTacFade.Game",
     "rootNamespace": "TicTacFade.Game",
     "references": [
-        "TicTacFade.Core"
+        "TicTacFade.Core",
+        "TicTacFade.Solver"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],

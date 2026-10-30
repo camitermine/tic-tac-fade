@@ -26,9 +26,32 @@ namespace TicTacFade.Game
         [SerializeField] float absentTurnTimeSeconds = 10f;
         [SerializeField] int maxConsecutiveTimeouts = 3;
 
+        // Starting values from AIConfig.Default(), to be tuned by playing (GDD §8.2).
+        [Header("AI levels (Game only: the rules engine never reads them)")]
+        [SerializeField, Range(0, 100)] int easyErrorPercent = 50;
+        [SerializeField] bool easyAlwaysTakesImmediateWin = false;
+        [SerializeField] bool easyBlocksImmediateLoss = false;
+        [SerializeField, Range(0, 100)] int normalErrorPercent = 20;
+        [SerializeField] bool normalAlwaysTakesImmediateWin = true;
+        [SerializeField] bool normalBlocksImmediateLoss = true;
+        [SerializeField, Range(0, 100)] int perfectErrorPercent = 0;
+        [SerializeField] bool perfectAlwaysTakesImmediateWin = true;
+        [SerializeField] bool perfectBlocksImmediateLoss = true;
+
+        [Header("AI delay before playing, random in [min, max] seconds")]
+        [SerializeField] float aiMinDelaySeconds = 0.6f;
+        [SerializeField] float aiMaxDelaySeconds = 1.4f;
+
         public GameConfig ToGameConfig() => new GameConfig(boardSize, bufferSize, winLength, maxTotalMoves, repetitionLimit);
 
         public OnlineTimerConfig ToOnlineTimerConfig() =>
             new OnlineTimerConfig(turnTimeSeconds, absentTurnTimeSeconds, maxConsecutiveTimeouts);
+
+        public AIConfig ToAIConfig() => new AIConfig(
+            new AILevelConfig(easyErrorPercent, easyAlwaysTakesImmediateWin, easyBlocksImmediateLoss),
+            new AILevelConfig(normalErrorPercent, normalAlwaysTakesImmediateWin, normalBlocksImmediateLoss),
+            new AILevelConfig(perfectErrorPercent, perfectAlwaysTakesImmediateWin, perfectBlocksImmediateLoss),
+            aiMinDelaySeconds,
+            aiMaxDelaySeconds);
     }
 }
